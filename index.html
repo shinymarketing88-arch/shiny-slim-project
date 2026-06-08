@@ -14,13 +14,14 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 .screen{display:none;position:relative;z-index:1}.screen.active{display:block}
 
 /* STEP INDICATOR */
-.steps{display:flex;align-items:center;justify-content:center;gap:0;padding:1.5rem 1rem 0.5rem}
-.step{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
-.step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid var(--border);background:var(--bg);color:var(--dim);transition:all .3s}
-.step-dot.active{border-color:var(--gold);color:var(--gold);background:#1a1800}
+.steps{display:flex;align-items:center;justify-content:center;gap:0;padding:1.5rem 1rem 1rem;background:var(--card);margin-bottom:4px}
+.step{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1}
+.step-dot{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:2px solid var(--border);background:var(--bg);color:var(--dim);transition:all .3s}
+.step-dot.active{border-color:var(--gold);color:var(--gold);background:#1a1800;box-shadow:0 0 12px rgba(255,215,0,.4)}
 .step-dot.done{border-color:var(--green);background:#1a3a1a;color:var(--green)}
-.step-label{font-size:9px;color:var(--dim);text-align:center;line-height:1.3}
-.step-line{flex:1;height:2px;background:var(--border);margin-bottom:16px;transition:background .3s}
+.step-label{font-size:10px;color:var(--dim);text-align:center;line-height:1.3}
+.step-label.active{color:var(--gold);font-weight:700}
+.step-line{flex:1;height:3px;background:var(--border);margin-bottom:20px;transition:background .3s;border-radius:2px}
 .step-line.done{background:var(--green)}
 
 /* INPUTS */
@@ -198,7 +199,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
     <div class="steps" id="steps-group">
       <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
       <div class="step-line done"></div>
-      <div class="step"><div class="step-dot active">2</div><div class="step-label">選角色</div></div>
+      <div class="step"><div class="step-dot active">2</div><div class="step-label active">選角色</div></div>
       <div class="step-line"></div>
       <div class="step"><div class="step-dot">3</div><div class="step-label">設暱稱</div></div>
       <div class="step-line"></div>
@@ -228,18 +229,13 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
       <div class="step-line done"></div>
       <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
       <div class="step-line done"></div>
-      <div class="step"><div class="step-dot active">3</div><div class="step-label">設暱稱</div></div>
+      <div class="step"><div class="step-dot active">3</div><div class="step-label active">設暱稱</div></div>
       <div class="step-line"></div>
       <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
     </div>
     <div style="padding:0 1rem">
       <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定冒險者暱稱</div>
-      <div style="font-size:12px;color:var(--dim);margin-bottom:1rem">排行榜上顯示的名稱，之後可以更改</div>
-      <div class="nick-preview">
-        <canvas id="nick-canvas" width="72" height="96" style="display:block;margin:0 auto 8px;image-rendering:pixelated"></canvas>
-        <div class="nick-name" id="nick-char-name">—</div>
-        <div class="nick-sub" id="nick-char-slogan">—</div>
-      </div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:1.5rem">排行榜上顯示的名稱，之後可以更改</div>
       <input class="game-input" type="text" id="nick-input" placeholder="輸入暱稱（最多8字）" maxlength="8" style="margin-bottom:8px"/>
       <div class="err" id="nick-err"></div>
     </div>
@@ -260,7 +256,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
       <div class="step-line done"></div>
       <div class="step"><div class="step-dot done">✓</div><div class="step-label">設暱稱</div></div>
       <div class="step-line done"></div>
-      <div class="step"><div class="step-dot active">4</div><div class="step-label">目標設定</div></div>
+      <div class="step"><div class="step-dot active">4</div><div class="step-label active">目標設定</div></div>
     </div>
     <div style="padding:0 1rem">
       <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定體態目標</div>
@@ -999,20 +995,23 @@ window.doLogout=function(){
   showScreen('s-login');
 };
 
-document.getElementById('emp-input').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
-document.getElementById('login-btn').addEventListener('click',doLogin);
 
-// 綁定所有步驟按鈕
-const btnBindings = [
-  ['group-next-btn', goToNick],
-  ['nick-next-btn', goToInbody],
-  ['inbody-back-btn', ()=>showScreen('s-nick')],
-  ['inbody-next-btn', completeSetup],
-  ['skip-inbody-btn', skipInbody],
-];
-btnBindings.forEach(([id, fn])=>{
-  const el=document.getElementById(id);
-  if(el) el.addEventListener('click', fn);
+// 等 DOM 完全載入後才綁定所有按鈕
+window.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('emp-input').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  document.getElementById('login-btn').addEventListener('click', ()=>doLogin());
+
+  const btnBindings = [
+    ['group-next-btn', ()=>goToNick()],
+    ['nick-next-btn', ()=>goToInbody()],
+    ['inbody-back-btn', ()=>showScreen('s-nick')],
+    ['inbody-next-btn', ()=>completeSetup()],
+    ['skip-inbody-btn', ()=>skipInbody()],
+  ];
+  btnBindings.forEach(([id, fn])=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('click', fn);
+  });
 });
 
 </script>
