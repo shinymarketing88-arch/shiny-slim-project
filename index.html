@@ -702,8 +702,9 @@ window.goToInbody=function(){
   if(!nick){document.getElementById('nick-err').textContent='請輸入暱稱';return;}
   document.getElementById('nick-err').textContent='';
   S.nickname=nick;
-  renderInbodyForm();
   showScreen('s-inbody');
+  // 確保在畫面切換後再渲染表單
+  setTimeout(()=>renderInbodyForm(), 50);
 };
 
 function renderInbodyForm(){
