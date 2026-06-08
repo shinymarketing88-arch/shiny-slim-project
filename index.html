@@ -167,9 +167,15 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 .upload-area{border:2px dashed var(--border);border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;margin:8px 0;transition:border-color .2s}
 .upload-area:hover{border-color:var(--gold)}
 .upload-area input{display:none}
-.upload-preview{width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-top:8px;display:none}
+.upload-preview-wrap{width:100%;aspect-ratio:9/16;max-height:360px;border-radius:8px;margin-top:8px;overflow:hidden;display:none;background:#0d0d1a}
+.upload-preview{width:100%;height:100%;object-fit:contain;display:block}
+.upload-done{background:#1a3a1a;border:1px solid #3a6a3a;color:#66cc66;border-radius:8px;padding:10px;text-align:center;font-size:13px;font-weight:700;margin-top:8px;display:none}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1a3a1a;border:1px solid #3a6a3a;color:#66cc66;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
+/* STEP FIXED BOTTOM BTN */
+.step-screen{min-height:100vh;display:flex;flex-direction:column}
+.step-content{flex:1;overflow-y:auto;padding:0 1rem}
+.step-footer{position:sticky;bottom:0;background:var(--bg);padding:1rem;border-top:0.5px solid var(--border);display:flex;gap:8px;z-index:50}
 </style>
 </head>
 <body>
@@ -320,7 +326,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
         <div class="q-title">【糧草紀錄】飲食打卡</div>
         <div class="q-desc">上傳 WonderFood-AI 日統計截圖　+1分</div>
       </div>
-      <button class="q-btn q-todo" onclick="openUpload('飲食打卡',1)">▶ 上傳</button>
+      <button class="q-btn q-todo" id="q-btn-diet" onclick="openUpload('飲食打卡',1)">▶ 上傳</button>
     </div>
     <div class="quest-item">
       <div class="q-icon" style="background:#2a2a00">🏅</div>
@@ -328,7 +334,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
         <div class="q-title">【聖餐檢定】健康飲食達標</div>
         <div class="q-desc">每週4次達80%營養成分　+2分</div>
       </div>
-      <button class="q-btn q-todo" onclick="openUpload('健康飲食',2)">▶ 上傳</button>
+      <button class="q-btn q-todo" id="q-btn-health" onclick="openUpload('健康飲食',2)">▶ 上傳</button>
     </div>
     <div class="quest-item">
       <div class="q-icon" style="background:#1a1a3a">🏋️</div>
@@ -336,7 +342,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
         <div class="q-title">【神兵加持】運動打卡</div>
         <div class="q-desc">上傳運動證明　+1分（每3次爆擊+3）</div>
       </div>
-      <button class="q-btn q-todo" onclick="openUpload('運動打卡',1)">▶ 上傳</button>
+      <button class="q-btn q-todo" id="q-btn-sport" onclick="openUpload('運動打卡',1)">▶ 上傳</button>
     </div>
     <div class="quest-item">
       <div class="q-icon" style="background:#2a1a00">📸</div>
@@ -344,7 +350,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
         <div class="q-title">【英雄傳說】照片＋心得</div>
         <div class="q-desc">3張照片＋100字心得　+5分</div>
       </div>
-      <button class="q-btn q-todo" onclick="openUpload('照片心得',5)">▶ 上傳</button>
+      <button class="q-btn q-todo" id="q-btn-photo" onclick="openUpload('照片心得',5)">▶ 上傳</button>
     </div>
   </div>
 
@@ -365,7 +371,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
   <div class="sec-hd">🍮 馬甲果凍進度</div>
   <div class="reward-card" style="margin-bottom:10px">
     <div style="display:flex;align-items:center;gap:10px">
-      <div style="font-size:28px">🍮</div>
+      <div style="font-size:28px">🧡</div>
       <div style="flex:1">
         <div style="font-size:12px;font-weight:700;margin-bottom:2px">【m2美度】超能馬甲果凍</div>
         <div style="font-size:10px;color:var(--dim)">連續10天登入＋飲食打卡 → 兌換一次（最多5次）</div>
@@ -466,15 +472,18 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 
 <!-- UPLOAD MODAL -->
 <div id="upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:flex-end;justify-content:center">
-  <div style="background:var(--card);border-radius:20px 20px 0 0;padding:1.5rem;width:100%;max-width:480px">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;padding:1.5rem;width:100%;max-width:480px;max-height:92vh;overflow-y:auto">
     <div style="font-size:15px;font-weight:700;margin-bottom:4px" id="upload-title">上傳打卡截圖</div>
     <div style="font-size:12px;color:var(--dim);margin-bottom:1rem" id="upload-desc">—</div>
-    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+    <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
       <div style="font-size:24px;margin-bottom:4px">📎</div>
-      <div style="font-size:13px;color:var(--dim)">點擊選擇截圖</div>
+      <div style="font-size:13px;color:var(--dim)" id="upload-area-hint">點擊選擇截圖（手機截圖）</div>
       <input type="file" id="file-input" accept="image/*" onchange="previewFile(event)"/>
+    </div>
+    <div class="upload-preview-wrap" id="upload-preview-wrap">
       <img id="upload-preview" class="upload-preview"/>
     </div>
+    <div class="upload-done" id="upload-done">✅ 截圖已選取，點送出完成打卡</div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-outline" style="flex:1" onclick="closeUpload()">取消</button>
       <button class="btn btn-primary" style="flex:1" id="submit-btn" onclick="submitCheckin()">✅ 送出打卡</button>
@@ -789,7 +798,7 @@ function renderJelly(){
   const jc=S.jellyCount||0,cd=S.consecutiveDays||0;
   document.getElementById('jelly-bar').style.width=Math.min(Math.round(cd/10*100),100)+'%';
   document.getElementById('jelly-hint').textContent=`連續 ${cd} / 10 天（已兌換 ${jc}/5 次）`;
-  document.getElementById('jelly-slots').innerHTML=Array(5).fill(0).map((_,i)=>`<div class="jelly-slot ${i<jc?'earned':''}">${i<jc?'🍮':''}</div>`).join('');
+  document.getElementById('jelly-slots').innerHTML=Array(5).fill(0).map((_,i)=>`<div class="jelly-slot ${i<jc?'earned':''}">${i<jc?'🧡':''}</div>`).join('');
 }
 
 function renderWeekly(){
@@ -814,13 +823,26 @@ window.openUpload=function(task,pts){
   document.getElementById('upload-modal').style.display='flex';
 };
 
-window.closeUpload=function(){document.getElementById('upload-modal').style.display='none';};
+window.closeUpload=function(){
+  document.getElementById('upload-modal').style.display='none';
+  document.getElementById('upload-area').style.display='block';
+  document.getElementById('upload-preview-wrap').style.display='none';
+  document.getElementById('upload-done').style.display='none';
+  document.getElementById('file-input').value='';
+  selectedFile=null;
+};
 
 window.previewFile=function(e){
   selectedFile=e.target.files[0];
   if(!selectedFile)return;
   const reader=new FileReader();
-  reader.onload=ev=>{const img=document.getElementById('upload-preview');img.src=ev.target.result;img.style.display='block';};
+  reader.onload=ev=>{
+    const img=document.getElementById('upload-preview');
+    img.src=ev.target.result;
+    document.getElementById('upload-preview-wrap').style.display='block';
+    document.getElementById('upload-area').style.display='none';
+    document.getElementById('upload-done').style.display='block';
+  };
   reader.readAsDataURL(selectedFile);
 };
 
@@ -840,6 +862,13 @@ window.submitCheckin=async function(){
       createdAt:new Date()
     });
     closeUpload();
+    // 更新任務按鈕為已送出狀態
+    const taskBtnMap={'飲食打卡':'q-btn-diet','健康飲食':'q-btn-health','運動打卡':'q-btn-sport','照片心得':'q-btn-photo'};
+    const btnId=taskBtnMap[currentUploadTask.task];
+    if(btnId){
+      const qb=document.getElementById(btnId);
+      if(qb){qb.className='q-btn q-pending';qb.textContent='⏳ 審核中';}
+    }
     showToast('✅ 打卡成功！等待審核後積分更新');
   }catch(e){alert('上傳失敗：'+e.message);}
   finally{btn.disabled=false;btn.textContent='✅ 送出打卡';}
