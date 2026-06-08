@@ -193,81 +193,87 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 </div>
 
 <!-- ══ STEP 2: GROUP & CHAR ══ -->
-<div id="s-group" class="screen">
-  <div class="steps" id="steps-group">
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot active">2</div><div class="step-label">選角色</div></div>
-    <div class="step-line"></div>
-    <div class="step"><div class="step-dot">3</div><div class="step-label">設暱稱</div></div>
-    <div class="step-line"></div>
-    <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
-  </div>
-  <div style="padding:0 1rem 1rem">
-    <div style="font-size:15px;font-weight:700;margin-bottom:4px" id="group-title">選擇你的組別與角色</div>
-    <div style="font-size:12px;color:var(--dim);margin-bottom:12px" id="group-sub">組別選定後不能更換，角色之後隨時可改</div>
-    <div class="group-tabs" id="group-tabs">
-      <div class="gtab" id="tab-fat" onclick="switchGroup('fat')">⚡ 減脂組</div>
-      <div class="gtab" id="tab-muscle" onclick="switchGroup('muscle')">💪 增肌組</div>
+<div id="s-group" class="screen" style="min-height:100vh;display:flex;flex-direction:column">
+  <div style="flex:1;overflow-y:auto;padding-bottom:80px">
+    <div class="steps" id="steps-group">
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot active">2</div><div class="step-label">選角色</div></div>
+      <div class="step-line"></div>
+      <div class="step"><div class="step-dot">3</div><div class="step-label">設暱稱</div></div>
+      <div class="step-line"></div>
+      <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
     </div>
-    <div class="lock-note" id="lock-note">⚠️ 組別選定後即開始你的進化旅程，無法更換</div>
-    <div class="char-grid" id="char-grid"></div>
-    <button class="btn btn-primary" onclick="goToNick()">下一步 →</button>
+    <div style="padding:0 1rem">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px" id="group-title">選擇你的組別與角色</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:12px" id="group-sub">組別選定後不能更換，角色之後隨時可改</div>
+      <div class="group-tabs" id="group-tabs">
+        <div class="gtab" id="tab-fat" onclick="switchGroup('fat')">⚡ 減脂組</div>
+        <div class="gtab" id="tab-muscle" onclick="switchGroup('muscle')">💪 增肌組</div>
+      </div>
+      <div class="lock-note" id="lock-note">⚠️ 組別選定後即開始你的進化旅程，無法更換</div>
+      <div class="char-grid" id="char-grid"></div>
+    </div>
+  </div>
+  <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:1rem;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
+    <button class="btn btn-primary" id="group-next-btn" onclick="goToNick()">下一步 →</button>
   </div>
 </div>
 
 <!-- ══ STEP 3: NICKNAME ══ -->
-<div id="s-nick" class="screen">
-  <div class="steps">
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot active">3</div><div class="step-label">設暱稱</div></div>
-    <div class="step-line"></div>
-    <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
+<div id="s-nick" class="screen" style="min-height:100vh;display:flex;flex-direction:column">
+  <div style="flex:1;overflow-y:auto;padding-bottom:80px">
+    <div class="steps">
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot active">3</div><div class="step-label">設暱稱</div></div>
+      <div class="step-line"></div>
+      <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
+    </div>
+    <div style="padding:0 1rem">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定冒險者暱稱</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:1rem">排行榜上顯示的名稱，之後可以更改</div>
+      <div class="nick-preview">
+        <canvas id="nick-canvas" width="72" height="96" style="display:block;margin:0 auto 8px;image-rendering:pixelated"></canvas>
+        <div class="nick-name" id="nick-char-name">—</div>
+        <div class="nick-sub" id="nick-char-slogan">—</div>
+      </div>
+      <input class="game-input" type="text" id="nick-input" placeholder="輸入暱稱（最多8字）" maxlength="8" style="margin-bottom:8px"/>
+      <div class="err" id="nick-err"></div>
+    </div>
   </div>
-  <div style="padding:0 1rem 1rem;flex:1;display:flex;flex-direction:column">
-    <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定冒險者暱稱</div>
-    <div style="font-size:12px;color:var(--dim);margin-bottom:1rem">排行榜上顯示的名稱，之後可以更改</div>
-    <div class="nick-preview">
-      <canvas id="nick-canvas" width="72" height="96" style="display:block;margin:0 auto 8px;image-rendering:pixelated"></canvas>
-      <div class="nick-name" id="nick-char-name">—</div>
-      <div class="nick-sub" id="nick-char-slogan">—</div>
-    </div>
-    <input class="game-input" type="text" id="nick-input" placeholder="輸入暱稱（最多8字）" maxlength="8" style="margin-bottom:8px"/>
-    <div class="err" id="nick-err"></div>
-    <div style="display:flex;gap:8px;margin-top:auto">
-      <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-group')">← 返回</button>
-      <button class="btn btn-primary" style="flex:1" onclick="goToInbody()">下一步 →</button>
-    </div>
+  <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:1rem;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:8px">
+    <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-group')">← 返回</button>
+    <button class="btn btn-primary" style="flex:1" onclick="goToInbody()">下一步 →</button>
   </div>
 </div>
 
 <!-- ══ STEP 4: INBODY ══ -->
-<div id="s-inbody" class="screen">
-  <div class="steps">
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot done">✓</div><div class="step-label">設暱稱</div></div>
-    <div class="step-line done"></div>
-    <div class="step"><div class="step-dot active">4</div><div class="step-label">目標設定</div></div>
+<div id="s-inbody" class="screen" style="min-height:100vh;display:flex;flex-direction:column">
+  <div style="flex:1;overflow-y:auto;padding-bottom:80px">
+    <div class="steps">
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot done">✓</div><div class="step-label">設暱稱</div></div>
+      <div class="step-line done"></div>
+      <div class="step"><div class="step-dot active">4</div><div class="step-label">目標設定</div></div>
+    </div>
+    <div style="padding:0 1rem">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定體態目標</div>
+      <div class="inbody-desc">根據你的 InBody 前測數據，設定你的目標。<br>不需填寫實際體重或體脂，只填差距即可，保護個人隱私。</div>
+      <div class="inbody-form" id="inbody-form"></div>
+      <div style="text-align:center;margin-top:10px">
+        <span style="font-size:11px;color:var(--hint);cursor:pointer;text-decoration:underline" onclick="skipInbody()">跳過，稍後再填</span>
+      </div>
+    </div>
   </div>
-  <div style="padding:0 1rem 1rem">
-    <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定體態目標</div>
-    <div class="inbody-desc">根據你的 InBody 前測數據，設定你的目標。<br>不需填寫實際體重或體脂，只填差距即可，保護個人隱私。</div>
-    <div class="inbody-form" id="inbody-form">
-      <!-- 動態生成 by JS -->
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-nick')">← 返回</button>
-      <button class="btn btn-primary" style="flex:1" onclick="completeSetup()">🚀 開始冒險！</button>
-    </div>
-    <div style="text-align:center;margin-top:10px">
-      <span style="font-size:11px;color:var(--hint);cursor:pointer;text-decoration:underline" onclick="skipInbody()">跳過，稍後再填</span>
-    </div>
+  <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:1rem;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:8px">
+    <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-nick')">← 返回</button>
+    <button class="btn btn-primary" style="flex:1" onclick="completeSetup()">🚀 開始冒險！</button>
   </div>
 </div>
 
@@ -949,7 +955,7 @@ window.goChangeChar=function(){
   document.getElementById('group-tabs').style.display='none';
   document.getElementById('lock-note').style.display='none';
   renderCharGrid(S.group);
-  const btn=document.querySelector('#s-group .btn-primary');
+  const btn=document.getElementById('group-next-btn');
   if(btn){btn.textContent='確認更換';btn.onclick=confirmChangeChar;}
   showScreen('s-group');
 };
@@ -961,7 +967,7 @@ window.confirmChangeChar=async function(){
   document.getElementById('group-sub').textContent='組別選定後不能更換，角色之後隨時可改';
   document.getElementById('group-tabs').style.display='grid';
   document.getElementById('lock-note').style.display='block';
-  const btn=document.querySelector('#s-group .btn-primary');
+  const btn=document.getElementById('group-next-btn');
   if(btn){btn.textContent='下一步 →';btn.onclick=goToNick;}
   try{await updateDoc(doc(db,'summer2026_employees',S.empId),{charId:S.charId});}catch(e){}
   showTab('me');
