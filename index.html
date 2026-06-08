@@ -188,7 +188,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
     <div class="login-sub">2026 夏季體態進化挑戰<br>7/6 – 8/20　共 45 天</div>
     <input class="game-input" type="text" id="emp-input" placeholder="輸入員工編號（如 SM0001）" style="margin-bottom:8px"/>
     <div class="err" id="login-err"></div>
-    <button class="btn btn-primary" onclick="doLogin()">▶ START GAME</button>
+    <button class="btn btn-primary" id="login-btn">▶ START GAME</button>
   </div>
 </div>
 
@@ -246,7 +246,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
   </div>
   <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:1rem;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:8px">
     <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-group')">← 返回</button>
-    <button class="btn btn-primary" style="flex:1" onclick="goToInbody()">下一步 →</button>
+    <button class="btn btn-primary" style="flex:1" id="nick-next-btn">下一步 →</button>
   </div>
 </div>
 
@@ -267,13 +267,13 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
       <div class="inbody-desc">根據你的 InBody 前測數據，設定你的目標。<br>不需填寫實際體重或體脂，只填差距即可，保護個人隱私。</div>
       <div class="inbody-form" id="inbody-form"></div>
       <div style="text-align:center;margin-top:10px">
-        <span style="font-size:11px;color:var(--hint);cursor:pointer;text-decoration:underline" onclick="skipInbody()">跳過，稍後再填</span>
+        <span id="skip-inbody-btn" style="font-size:11px;color:var(--hint);cursor:pointer;text-decoration:underline">跳過，稍後再填</span>
       </div>
     </div>
   </div>
   <div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;padding:1rem;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:8px">
-    <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-nick')">← 返回</button>
-    <button class="btn btn-primary" style="flex:1" onclick="completeSetup()">🚀 開始冒險！</button>
+    <button class="btn btn-outline" style="flex:0 0 80px" id="inbody-back-btn">← 返回</button>
+    <button class="btn btn-primary" style="flex:1" id="inbody-next-btn">🚀 開始冒險！</button>
   </div>
 </div>
 
@@ -1000,6 +1000,21 @@ window.doLogout=function(){
 };
 
 document.getElementById('emp-input').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('login-btn').addEventListener('click',doLogin);
+
+// 綁定所有步驟按鈕
+const btnBindings = [
+  ['group-next-btn', goToNick],
+  ['nick-next-btn', goToInbody],
+  ['inbody-back-btn', ()=>showScreen('s-nick')],
+  ['inbody-next-btn', completeSetup],
+  ['skip-inbody-btn', skipInbody],
+];
+btnBindings.forEach(([id, fn])=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('click', fn);
+});
+
 </script>
 </body>
 </html>
