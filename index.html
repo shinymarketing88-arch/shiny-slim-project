@@ -535,19 +535,18 @@ function showScreen(name) {
   $(`screen-${name}`).classList.add('active');
   $('screen-area').scrollTop = 0;
   currentScreen = name;
-  // footer & nav
   const stepScreens = ['group','nick','inbody'];
   const mainScreens = ['main','profile'];
-  if(stepScreens.includes(name)) {
+  if(name === 'login') {
+    $('footer-bar').className = '';
+    $('nav-bar').className = 'nav-bar';
+  } else if(stepScreens.includes(name)) {
     $('footer-bar').className = 'show' + (name!=='group'?' two-btn':'');
     $('footer-back').style.display = name!=='group' ? 'block' : 'none';
     $('nav-bar').className = 'nav-bar';
   } else if(mainScreens.includes(name)) {
     $('footer-bar').className = '';
     $('nav-bar').className = 'nav-bar show';
-  } else {
-    $('footer-bar').className = '';
-    $('nav-bar').className = 'nav-bar';
   }
 }
 
@@ -652,11 +651,20 @@ async function completeSetup() {
   const currentGap = parseFloat($('ib-gap')?.value)||0;
   S.targetVal=targetVal; S.currentGap=currentGap;
   S.target = S.group==='fat'?`減脂 ${targetVal}%`:`增肌 ${targetVal}kg`;
-  await saveUser();
-  showScreen('main'); renderMain();
+  try {
+    await saveUser();
+  } catch(e) {
+    console.error('saveUser error:', e);
+  }
+  showScreen('main');
+  renderMain();
 }
 
-async function skipInbody() { await saveUser(); showScreen('main'); renderMain(); }
+async function skipInbody() {
+  try { await saveUser(); } catch(e) { console.error(e); }
+  showScreen('main');
+  renderMain();
+}
 
 async function saveUser() {
   try {
