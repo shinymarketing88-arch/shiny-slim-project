@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>ShapeShifter 資料初始化</title>
+<style>
+body{font-family:sans-serif;background:#0d0d1a;color:#e8e8ff;padding:2rem;max-width:600px;margin:0 auto}
+h1{color:#ffd700;margin-bottom:1rem}
+.btn{padding:12px 24px;background:#4a3a9a;border:none;border-radius:8px;color:#fff;font-size:14px;cursor:pointer;margin:8px 4px}
+.btn:hover{background:#5a4aaa}
+.btn.danger{background:#8a2a2a}
+.btn.danger:hover{background:#aa3a3a}
+.log{background:#1a1a2e;border-radius:8px;padding:1rem;margin-top:1rem;max-height:400px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.8}
+.log .ok{color:#66cc66}
+.log .err{color:#ff6666}
+.log .info{color:#8888ff}
+.status{padding:8px 14px;border-radius:6px;margin:8px 0;font-size:13px}
+.status.running{background:#1a1a3a;color:#8888ff}
+.status.done{background:#1a3a1a;color:#66cc66}
+.status.error{background:#3a1a1a;color:#ff6666}
+.section{background:#1a1a2e;border-radius:12px;padding:1.5rem;margin-bottom:1rem}
+.section h3{color:#ffd700;margin-bottom:1rem;font-size:14px}
+.warn{background:#2a1a00;border:1px solid #aa6600;border-radius:8px;padding:10px 14px;font-size:12px;color:#ffaa44;margin-bottom:1rem}
+</style>
+</head>
+<body>
+<h1>⚙️ ShapeShifter 資料初始化工具</h1>
+<div class="warn">⚠️ 此工具只需執行一次！重複執行會覆蓋現有資料。</div>
+
+<div class="section">
+  <h3>步驟一：初始化員工清冊</h3>
+  <p style="font-size:12px;color:#8888aa;margin-bottom:12px">將154位員工資料寫入 Firestore summer2026_employees</p>
+  <button class="btn" onclick="initEmployees()">▶ 初始化員工清冊</button>
+</div>
+
+<div class="section">
+  <h3>步驟二：初始化系統設定</h3>
+  <p style="font-size:12px;color:#8888aa;margin-bottom:12px">寫入積分設定、活動日期等系統參數</p>
+  <button class="btn" onclick="initSettings()">▶ 初始化系統設定</button>
+</div>
+
+<div class="section">
+  <h3>危險操作</h3>
+  <button class="btn danger" onclick="clearAll()">🗑️ 清除所有活動資料（慎用）</button>
+</div>
+
+<div id="status-wrap"></div>
+<div class="log" id="log"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, doc, setDoc, writeBatch, collection, getDocs, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCRzerWEnFDmPcCcRCETsMlp8WdAT0k90E",
+  authDomain: "shiny-slim-project.firebaseapp.com",
+  projectId: "shiny-slim-project",
+  storageBucket: "shiny-slim-project.firebasestorage.app",
+  messagingSenderId: "54178644265",
+  appId: "1:54178644265:web:c5a1ccf91a0d3b5ab2b738"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const EMPLOYEES = [
+  ["SM0001","楊博鈞"],["SM0004","蕭美娥"],["SM0005","吳偲瑜"],["SM0008","許安絢"],["SM0009","林淑蓉"],
+  ["SM0010","方栩柵"],["SM0012","李芮綺"],["SM0015","李佩庭"],["SM0017","陳盈蓁"],["SM0019","蔡亞喻"],
+  ["SM0020","李楓"],["SM0022","李亦翎"],["SM0023","蘇紫淳"],["SM0027","張芷婷"],["SM0029","劉宜婷"],
+  ["SM0030","林蓓菁"],["SM0033","黃柔云"],["SM0039","林允鴻"],["SM0040","黃詩婷"],["SM0042","李怡慧"],
+  ["SM0043","林君庭"],["SM0045","陳玥竹"],["SM0046","呂思佳"],["SM0049","林盈杏"],["SM0050","楊惠名"],
+  ["SM0051","許又仁"],["SM0052","方宓菁"],["SM0053","林真伊"],["SM0054","柳季雯"],["SM0057","陳意璇"],
+  ["SM0058","陳昶阡"],["SM0060","鍾玉芳"],["SM0062","張健威"],["SM0063","李蓓韻"],["SM0064","陳育萱"],
+  ["SM0067","陳姿君"],["SM0068","謝宛呈"],["SM0071","翁宸紜"],
+  ["VE0001","楊尚軒"],["VE0003","楊婷婷"],["VE0005","呂靈慧"],["VE0007","洪晨溦"],["VE0008","游智盛"],
+  ["VE0012","朱慧妮"],["VE0014","詹宛璇"],["VE0016","張曉美"],["VE0017","陳怡伶"],["VE0018","林湘慈"],
+  ["VE0020","張安宇"],["VE0023","吳惠芳"],["VE0024","薛祥明"],["VE0026","林佳慧"],["VE0028","莫舒涵"],
+  ["VE0029","劉柏均"],["VE0034","張丞萱"],["VE0035","鄭琦霏"],["VE0037","林婉甄"],["VE0049","游瓊茹"],
+  ["VE0057","高靖雯"],["VE0058","陳慧玲"],["VE0059","吳采郿"],["VE0061","林佳雯"],["VE0067","李偉琪"],
+  ["VE0071","胡蕙郁"],["VE0077","吳采凌"],["VE0079","羅瑞金"],["VE0105","林立瑋"],["VE0107","劉冠萱"],
+  ["VE0109","陳穎慧"],["VE0110","鄭姿榕"],["VE0114","林淑真"],["VE0125","馮暄芸"],["VE0126","邱嬿融"],
+  ["VE0128","范紋綾"],["VE0133","游雅君"],["VE0142","方妍羽"],["VE0155","林佳瑩"],["VE0166","洪淨珮"],
+  ["VE0168","陳怡蓁"],["VE0170","陳宥吟"],["VE0171","張翊君"],["VE0173","鄭怡芳"],["VE0174","林秐希"],
+  ["VE0176","許書銘"],["VE0177","羅鈺琳"],["VE0178","周惠雯"],["VE0179","吳冠蓁"],["VE0181","高敏敏"],
+  ["VE0183","徐慧玲"],["VE0184","林雅婷"],["VE0188","廖婉妤"],["VE0195","祝戎怡"],["VE0197","陳緯浩"],
+  ["VE0198","楊靖卉"],["VE0200","文姿淳"],["VE0202","邱夏娥"],["VE0203","簡辰芳"],["VE0204","王彥甯"],
+  ["VE0207","聶珮勻"],["VE0212","曾毓萱"],["VE0213","林子琇"],["VE0216","邱郁茜"],["VE0217","王振婷"],
+  ["VE0218","戴妤庭"],["VE0219","林聖傑"],["VE0221","賴若宣"],["VE0226","古秉翰"],["VE0230","林芷嫻"],
+  ["VE0231","謝惠敏"],["VE0232","蔡曉嵐"],["VE0233","于智偉"],["VE0239","李姿潔"],["VE0240","王素卿"],
+  ["VE0241","張家獻"],["VE0243","陳韻如"],["VE0244","賀軍融"],["VE0249","張媛媛"],["VE0256","張宇翊"],
+  ["VE0261","徐若喬"],["VE0262","魏鈺庭"],["VE0263","倪珮馨"],["VE0265","張初安"],["VE0266","陳玟育"],
+  ["VE0268","徐淑貞"],["VE0269","鍾利羚"],["VE0276","王靖惠"],["VE0278","施惠菁"],["VE0279","林宜萱"],
+  ["VE0283","李文"],["VE0286","黃尹暄"],["VE0287","李季芹"],["VE0288","林姿妤"],["VE0289","楊禮瑛"],
+  ["VE0290","楊景淳"],["VE0292","劉沛璟"],["VE0293","王于瑄"],["VE0294","林韋萱"],["VE0296","黃寶螢"],
+  ["VE0297","陳湘湘"],["VE0298","潘旻慶"],["VE0299","TRAN TRI BAO陳智寶"],["VE0300","NGUYEN THI HONG YEN阮氏紅燕"],
+  ["VE0301","鄭凱中"],["VE0302","陳貝怡"],["VE0303","李旻珊"],["VE0304","蘇采妍"]
+];
+
+function log(msg, type='info') {
+  const el = document.getElementById('log');
+  el.innerHTML += `<div class="${type}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(msg, type='running') {
+  document.getElementById('status-wrap').innerHTML = `<div class="status ${type}">${msg}</div>`;
+}
+
+window.initEmployees = async function() {
+  setStatus('⏳ 初始化員工清冊中...', 'running');
+  log('開始寫入員工資料...', 'info');
+  try {
+    const BATCH_SIZE = 500;
+    let count = 0;
+    for(let i = 0; i < EMPLOYEES.length; i += BATCH_SIZE) {
+      const batch = writeBatch(db);
+      const chunk = EMPLOYEES.slice(i, i + BATCH_SIZE);
+      chunk.forEach(([id, name]) => {
+        const ref = doc(db, 'summer2026_employees', id);
+        batch.set(ref, {
+          empId: id, name,
+          group: '', charId: '', nickname: '',
+          taskPts: 0, inbodyPts: 0, rankPts: 0,
+          totalPts: 0, letters: [],
+          target: '', targetVal: 0, currentGap: 0,
+          consecutiveDays: 0, jellyCount: 0,
+          registeredAt: null, createdAt: new Date()
+        });
+        count++;
+      });
+      await batch.commit();
+      log(`已寫入 ${count} / ${EMPLOYEES.length} 位員工`, 'ok');
+    }
+    setStatus(`✅ 完成！共寫入 ${EMPLOYEES.length} 位員工`, 'done');
+    log(`✅ 員工清冊初始化完成`, 'ok');
+  } catch(e) {
+    setStatus('❌ 發生錯誤：' + e.message, 'error');
+    log('❌ ' + e.message, 'err');
+  }
+};
+
+window.initSettings = async function() {
+  setStatus('⏳ 初始化系統設定中...', 'running');
+  try {
+    await setDoc(doc(db, 'summer2026_settings', 'main'), {
+      activityName: 'ShapeShifter: Level Up Your Body',
+      startDate: '2026-07-06',
+      endDate: '2026-08-20',
+      totalDays: 45,
+      // 打卡積分
+      dietPts: 1,
+      exercisePts: 1,
+      exerciseBonus: 3,
+      exerciseBonusEvery: 3,
+      photoEssayPts: 5,
+      healthyDietPts: 2,
+      healthyDietWeekly: 4,
+      // 拼字
+      spellTarget: 'SHINYBRANDS',
+      ptsPerLetter: 8,
+      // 馬甲果凍
+      jellyConsecutiveDays: 10,
+      jellyMaxCount: 5,
+      // 達標級距分（增肌）
+      muscleT1Kg: 0.2, muscleT1Pts: 10,
+      muscleT2Kg: 0.6, muscleT2Pts: 20,
+      muscleT3Kg: 1.0, muscleT3Pts: 30,
+      // 達標級距分（減脂）
+      fatT1Pct: 1.5, fatT1Pts: 10,
+      fatT2Pct: 3.0, fatT2Pts: 20,
+      fatT3Pct: 4.5, fatT3Pts: 30,
+      // 名次分
+      rank1Pts: 30, rank2Pts: 20, rank3Pts: 10,
+      // 完賽條件
+      completionPhotoCount: 3,
+      completionEssayMinWords: 100,
+      completionFatMinPct: 1.5,
+      completionMuscleMinKg: 0.2,
+      updatedAt: new Date()
+    });
+    setStatus('✅ 系統設定初始化完成', 'done');
+    log('✅ 系統設定寫入成功', 'ok');
+  } catch(e) {
+    setStatus('❌ 發生錯誤：' + e.message, 'error');
+    log('❌ ' + e.message, 'err');
+  }
+};
+
+window.clearAll = async function() {
+  if(!confirm('⚠️ 確定要清除所有活動資料嗎？此操作無法復原！')) return;
+  if(!confirm('再次確認：真的要清除所有資料嗎？')) return;
+  setStatus('⏳ 清除中...', 'running');
+  const cols = ['summer2026_employees','summer2026_checkins','summer2026_settings','summer2026_letters'];
+  try {
+    for(const col of cols) {
+      const snap = await getDocs(collection(db, col));
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      log(`已清除 ${col}`, 'ok');
+    }
+    setStatus('✅ 清除完成', 'done');
+  } catch(e) {
+    setStatus('❌ ' + e.message, 'error');
+    log('❌ ' + e.message, 'err');
+  }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShapeShifter 主辦人後台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:#0d0d1a;color:#e8e8ff;min-height:100vh}
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+.login-box{background:#1a1a2e;border:1px solid #2a2a4a;border-radius:16px;padding:2rem;width:100%;max-width:360px;text-align:center}
+.login-title{font-size:18px;font-weight:700;color:#ffd700;margin-bottom:6px}
+.login-sub{font-size:12px;color:#8888aa;margin-bottom:1.5rem}
+input{width:100%;background:#0d0d1a;border:1px solid #2a2a4a;border-radius:8px;color:#e8e8ff;padding:10px 14px;font-size:14px;margin-bottom:8px;outline:none}
+input:focus{border-color:#ffd700}
+.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;transition:opacity 0.2s}
+.btn:hover{opacity:0.85}
+.btn-primary{background:#4a3a9a;color:#fff}
+.btn-gold{background:#ffd700;color:#1a1a00}
+.btn-green{background:#2a6a2a;color:#fff}
+.btn-red{background:#6a2a2a;color:#fff}
+.btn-sm{padding:5px 12px;font-size:11px}
+.btn-full{width:100%}
+.err{font-size:12px;color:#ff6666;min-height:16px;margin-bottom:8px}
+.admin-wrap{display:none}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:200px;background:#1a1a2e;border-right:1px solid #2a2a4a;padding:1rem 0;z-index:100}
+.sidebar-logo{font-size:13px;font-weight:700;color:#ffd700;padding:0 1rem 1rem;border-bottom:1px solid #2a2a4a;margin-bottom:0.5rem}
+.nav-item{padding:10px 1rem;font-size:13px;color:#8888aa;cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s}
+.nav-item:hover{background:#2a2a4a;color:#e8e8ff}
+.nav-item.active{background:#2a2a4a;color:#ffd700;border-right:2px solid #ffd700}
+.content{margin-left:200px;padding:1.5rem;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+.page-title{font-size:18px;font-weight:700;color:#ffd700;margin-bottom:1.5rem}
+.card{background:#1a1a2e;border:0.5px solid #2a2a4a;border-radius:12px;padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:14px;font-weight:700;color:#e8e8ff;margin-bottom:1rem}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem}
+.stat-card{background:#1a1a2e;border:0.5px solid #2a2a4a;border-radius:10px;padding:1rem;text-align:center}
+.stat-val{font-size:28px;font-weight:700;color:#ffd700}
+.stat-label{font-size:11px;color:#8888aa;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:8px 10px;text-align:left;color:#8888aa;border-bottom:1px solid #2a2a4a;font-weight:500;white-space:nowrap}
+td{padding:8px 10px;border-bottom:0.5px solid #2a2a4a;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02)}
+.badge{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700}
+.badge-fat{background:#2a1008;color:#ff6644}
+.badge-muscle{background:#081828;color:#44aaff}
+.badge-pending{background:#2a2a00;color:#ffaa00}
+.badge-approved{background:#1a3a1a;color:#66cc66}
+.badge-rejected{background:#3a1a1a;color:#ff6666}
+.filter-row{display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input[type=text]{background:#0d0d1a;border:1px solid #2a2a4a;border-radius:6px;color:#e8e8ff;padding:7px 10px;font-size:12px;width:auto}
+.img-thumb{width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;border:1px solid #2a2a4a}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:1000;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-inner{background:#1a1a2e;border-radius:16px;padding:1.5rem;max-width:500px;width:90%;max-height:90vh;overflow-y:auto}
+.modal-img{width:100%;border-radius:8px;margin-bottom:1rem}
+.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.form-label{font-size:12px;color:#8888aa}
+.form-input{background:#0d0d1a;border:1px solid #2a2a4a;border-radius:6px;color:#e8e8ff;padding:8px 10px;font-size:13px;width:100%}
+.form-input:focus{outline:none;border-color:#ffd700}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.loading{text-align:center;padding:2rem;color:#8888aa;font-size:13px}
+.search-box{flex:1;max-width:240px}
+</style>
+</head>
+<body>
+
+<div class="login-wrap" id="login-wrap">
+  <div class="login-box">
+    <div class="login-title">⚔ ShapeShifter</div>
+    <div class="login-sub">主辦人後台管理系統</div>
+    <input type="password" id="admin-pw" placeholder="請輸入管理員密碼" />
+    <div class="err" id="pw-err"></div>
+    <button class="btn btn-primary btn-full" onclick="adminLogin()">登入後台</button>
+  </div>
+</div>
+
+<div class="admin-wrap" id="admin-wrap">
+  <div class="sidebar">
+    <div class="sidebar-logo">⚔ 後台管理</div>
+    <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">📊 總覽</div>
+    <div class="nav-item" onclick="showPage('checkins')" id="nav-checkins">📋 打卡審核</div>
+    <div class="nav-item" onclick="showPage('members')" id="nav-members">👥 成員管理</div>
+    <div class="nav-item" onclick="showPage('inbody')" id="nav-inbody">📐 InBody 數據</div>
+    <div class="nav-item" onclick="showPage('ranking')" id="nav-ranking">🏆 排行榜</div>
+    <div class="nav-item" onclick="showPage('settings')" id="nav-settings">⚙️ 活動設定</div>
+    <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" onclick="adminLogout()">🚪 登出</div>
+  </div>
+
+  <div class="content">
+
+    <!-- 總覽 -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-title">📊 活動總覽</div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-val" id="stat-registered">—</div><div class="stat-label">已登入人數</div></div>
+        <div class="stat-card"><div class="stat-val" id="stat-checkins">—</div><div class="stat-label">今日打卡數</div></div>
+        <div class="stat-card"><div class="stat-val" id="stat-pending">—</div><div class="stat-label">待審核數</div></div>
+        <div class="stat-card"><div class="stat-val" id="stat-day">—</div><div class="stat-label">活動第幾天</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">各組參與狀況</div>
+        <table>
+          <tr><th>組別</th><th>已登入</th><th>今日打卡</th><th>平均積分</th></tr>
+          <tbody id="group-stats"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 打卡審核 -->
+    <div class="page" id="page-checkins">
+      <div class="page-title">📋 打卡審核</div>
+      <div class="filter-row">
+        <select id="filter-status" onchange="loadCheckins()">
+          <option value="待審核">待審核</option>
+          <option value="全部">全部</option>
+          <option value="通過">已通過</option>
+          <option value="駁回">已駁回</option>
+        </select>
+        <select id="filter-task" onchange="loadCheckins()">
+          <option value="">所有任務</option>
+          <option value="飲食打卡">飲食打卡</option>
+          <option value="運動打卡">運動打卡</option>
+          <option value="照片心得">照片心得</option>
+          <option value="健康飲食">健康飲食</option>
+        </select>
+        <input type="text" class="search-box" id="search-emp" placeholder="搜尋員工編號/姓名" oninput="loadCheckins()"/>
+        <button class="btn btn-sm btn-primary" onclick="loadCheckins()">🔄 重新載入</button>
+      </div>
+      <div id="checkins-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 成員管理 -->
+    <div class="page" id="page-members">
+      <div class="page-title">👥 成員管理</div>
+      <div class="filter-row">
+        <select id="member-filter-group" onchange="loadMembers()">
+          <option value="">全部組別</option>
+          <option value="fat">減脂組</option>
+          <option value="muscle">增肌組</option>
+          <option value="">未選組</option>
+        </select>
+        <input type="text" class="search-box" id="search-member" placeholder="搜尋員工" oninput="loadMembers()"/>
+        <button class="btn btn-sm btn-primary" onclick="loadMembers()">🔄 重新載入</button>
+      </div>
+      <div id="members-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- InBody 數據 -->
+    <div class="page" id="page-inbody">
+      <div class="page-title">📐 InBody 前後測數據</div>
+      <div class="filter-row">
+        <select id="inbody-filter" onchange="loadInbody()">
+          <option value="">全部</option>
+          <option value="fat">減脂組</option>
+          <option value="muscle">增肌組</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="loadInbody()">🔄 重新載入</button>
+        <button class="btn btn-sm btn-gold" onclick="calcRankPts()">⚡ 計算名次積分</button>
+      </div>
+      <div id="inbody-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 排行榜 -->
+    <div class="page" id="page-ranking">
+      <div class="page-title">🏆 積分排行榜</div>
+      <div class="filter-row">
+        <select id="rank-filter" onchange="loadRanking()">
+          <option value="">綜合排行</option>
+          <option value="fat">減脂組</option>
+          <option value="muscle">增肌組</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="loadRanking()">🔄 重新載入</button>
+      </div>
+      <div id="ranking-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 活動設定 -->
+    <div class="page" id="page-settings">
+      <div class="page-title">⚙️ 活動設定</div>
+      <div class="card">
+        <div class="card-title">積分設定</div>
+        <div class="settings-grid" id="settings-form">
+          <div class="loading" style="grid-column:span 2">載入中...</div>
+        </div>
+        <div style="margin-top:1rem">
+          <button class="btn btn-gold" onclick="saveSettings()">💾 儲存設定</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 審核 Modal -->
+<div class="modal" id="review-modal">
+  <div class="modal-inner">
+    <h3 style="color:#ffd700;margin-bottom:1rem" id="modal-title">審核打卡</h3>
+    <img class="modal-img" id="modal-img" src="" alt="打卡截圖"/>
+    <div id="modal-info" style="font-size:13px;color:#8888aa;margin-bottom:1rem;line-height:1.8"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green" style="flex:1" onclick="reviewCheckin('通過')">✅ 通過</button>
+      <button class="btn btn-red" style="flex:1" onclick="reviewCheckin('駁回')">❌ 駁回</button>
+      <button class="btn btn-primary" onclick="closeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, collection, getDocs, doc, updateDoc, getDoc, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCRzerWEnFDmPcCcRCETsMlp8WdAT0k90E",
+  authDomain: "shiny-slim-project.firebaseapp.com",
+  projectId: "shiny-slim-project",
+  storageBucket: "shiny-slim-project.firebasestorage.app",
+  messagingSenderId: "54178644265",
+  appId: "1:54178644265:web:c5a1ccf91a0d3b5ab2b738"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const ADMIN_PASSWORD = 'shiny2026admin';
+let currentCheckinId = null;
+let settingsData = {};
+
+window.adminLogin = function() {
+  const pw = document.getElementById('admin-pw').value;
+  if(pw !== ADMIN_PASSWORD) {
+    document.getElementById('pw-err').textContent = '密碼錯誤';
+    return;
+  }
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('admin-wrap').style.display = 'block';
+  loadDashboard();
+};
+
+window.adminLogout = function() {
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('admin-wrap').style.display = 'none';
+  document.getElementById('admin-pw').value = '';
+};
+
+window.showPage = function(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  document.getElementById('nav-'+page).classList.add('active');
+  if(page==='checkins') loadCheckins();
+  if(page==='members') loadMembers();
+  if(page==='inbody') loadInbody();
+  if(page==='ranking') loadRanking();
+  if(page==='settings') loadSettings();
+};
+
+async function loadDashboard() {
+  try {
+    const empSnap = await getDocs(collection(db, 'summer2026_employees'));
+    const emps = empSnap.docs.map(d => d.data());
+    const registered = emps.filter(e => e.group).length;
+    const fatCount = emps.filter(e => e.group==='fat').length;
+    const muscleCount = emps.filter(e => e.group==='muscle').length;
+    const fatAvg = fatCount > 0 ? Math.round(emps.filter(e=>e.group==='fat').reduce((s,e)=>s+(e.totalPts||0),0)/fatCount) : 0;
+    const muscleAvg = muscleCount > 0 ? Math.round(emps.filter(e=>e.group==='muscle').reduce((s,e)=>s+(e.totalPts||0),0)/muscleCount) : 0;
+    document.getElementById('stat-registered').textContent = registered;
+    const start = new Date('2026-07-06');
+    const day = Math.max(1, Math.min(Math.floor((new Date()-start)/86400000)+1, 45));
+    document.getElementById('stat-day').textContent = 'Day ' + day;
+    const checkSnap = await getDocs(query(collection(db,'summer2026_checkins'), where('status','==','待審核')));
+    document.getElementById('stat-pending').textContent = checkSnap.size;
+    document.getElementById('stat-checkins').textContent = '—';
+    document.getElementById('group-stats').innerHTML = `
+      <tr><td><span class="badge badge-fat">減脂組</span></td><td>${fatCount}</td><td>—</td><td>${fatAvg} 分</td></tr>
+      <tr><td><span class="badge badge-muscle">增肌組</span></td><td>${muscleCount}</td><td>—</td><td>${muscleAvg} 分</td></tr>
+    `;
+  } catch(e) { console.error(e); }
+}
+
+window.loadCheckins = async function() {
+  const status = document.getElementById('filter-status').value;
+  const task = document.getElementById('filter-task').value;
+  const search = document.getElementById('search-emp').value.trim().toUpperCase();
+  const wrap = document.getElementById('checkins-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    let q = collection(db, 'summer2026_checkins');
+    const snap = await getDocs(q);
+    let items = snap.docs.map(d => ({id:d.id, ...d.data()}));
+    if(status !== '全部') items = items.filter(i => i.status === status);
+    if(task) items = items.filter(i => i.taskType === task);
+    if(search) items = items.filter(i => i.empId?.includes(search) || i.empName?.includes(search));
+    items.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    if(items.length === 0) { wrap.innerHTML = '<div class="loading">無資料</div>'; return; }
+    wrap.innerHTML = `<table>
+      <tr><th>時間</th><th>員工</th><th>任務</th><th>截圖</th><th>狀態</th><th>操作</th></tr>
+      ${items.map(i => `
+        <tr>
+          <td style="color:#8888aa;font-size:11px">${i.createdAt?.seconds ? new Date(i.createdAt.seconds*1000).toLocaleString('zh-TW') : '—'}</td>
+          <td>${i.empName||''}<br><span style="font-size:10px;color:#8888aa">${i.empId||''}</span></td>
+          <td>${i.taskType||''}</td>
+          <td>${i.fileUrl ? `<img class="img-thumb" src="${i.fileUrl}" onclick="openReview('${i.id}','${i.fileUrl}','${i.empName}','${i.taskType}')">` : '無截圖'}</td>
+          <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
+          <td style="display:flex;gap:4px">
+            ${i.status==='待審核'?`
+              <button class="btn btn-sm btn-green" onclick="quickReview('${i.id}','通過','${i.empId}',${i.pts||0})">✅</button>
+              <button class="btn btn-sm btn-red" onclick="quickReview('${i.id}','駁回','${i.empId}',${i.pts||0})">❌</button>
+            `:'—'}
+          </td>
+        </tr>
+      `).join('')}
+    </table>`;
+  } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗：'+e.message+'</div>'; }
+};
+
+window.openReview = function(id, url, name, task) {
+  currentCheckinId = id;
+  document.getElementById('modal-img').src = url;
+  document.getElementById('modal-title').textContent = `審核：${name} — ${task}`;
+  document.getElementById('review-modal').classList.add('open');
+};
+
+window.closeModal = function() {
+  document.getElementById('review-modal').classList.remove('open');
+  currentCheckinId = null;
+};
+
+window.reviewCheckin = async function(status) {
+  if(!currentCheckinId) return;
+  await quickReview(currentCheckinId, status);
+  closeModal();
+};
+
+window.quickReview = async function(id, status, empId, pts) {
+  try {
+    const ref = doc(db, 'summer2026_checkins', id);
+    await updateDoc(ref, { status, reviewedAt: new Date() });
+    if(empId) {
+      const empRef = doc(db, 'summer2026_employees', empId);
+      const empSnap = await getDoc(empRef);
+      if(empSnap.exists()) {
+        const data = empSnap.data();
+        const delta = status === '通過' ? (pts||0) : -(pts||0);
+        await updateDoc(empRef, {
+          taskPts: (data.taskPts||0) + delta,
+          totalPts: (data.totalPts||0) + delta
+        });
+      }
+    }
+    loadCheckins();
+  } catch(e) { alert('操作失敗：'+e.message); }
+};
+
+window.loadMembers = async function() {
+  const group = document.getElementById('member-filter-group').value;
+  const search = document.getElementById('search-member').value.trim();
+  const wrap = document.getElementById('members-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    let items = snap.docs.map(d => d.data());
+    if(group) items = items.filter(i => i.group === group);
+    if(search) items = items.filter(i => i.empId?.includes(search.toUpperCase()) || i.name?.includes(search) || i.nickname?.includes(search));
+    items.sort((a,b) => (b.totalPts||0) - (a.totalPts||0));
+    wrap.innerHTML = `<table>
+      <tr><th>員工編號</th><th>姓名</th><th>暱稱</th><th>組別</th><th>角色</th><th>任務積分</th><th>體態積分</th><th>總積分</th><th>馬甲凍</th></tr>
+      ${items.map(i => `<tr>
+        <td>${i.empId}</td>
+        <td>${i.name}</td>
+        <td>${i.nickname||'—'}</td>
+        <td>${i.group?`<span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span>`:'未選'}</td>
+        <td>${i.charId||'—'}</td>
+        <td>${i.taskPts||0}</td>
+        <td>${i.inbodyPts||0}</td>
+        <td style="color:#ffd700;font-weight:700">${i.totalPts||0}</td>
+        <td>${i.jellyCount||0}/5</td>
+      </tr>`).join('')}
+    </table>`;
+  } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗</div>'; }
+};
+
+window.loadInbody = async function() {
+  const group = document.getElementById('inbody-filter').value;
+  const wrap = document.getElementById('inbody-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    let items = snap.docs.map(d => d.data()).filter(i => i.group);
+    if(group) items = items.filter(i => i.group === group);
+    wrap.innerHTML = `<table>
+      <tr><th>員工</th><th>組別</th><th>目標</th><th>前測差距</th><th>最新差距</th><th>達成率</th><th>體態積分</th></tr>
+      ${items.map(i => {
+        const progress = i.targetVal > 0 ? Math.round(((i.targetVal - (i.currentGap||i.targetVal)) / i.targetVal) * 100) : 0;
+        return `<tr>
+          <td>${i.name}<br><span style="font-size:10px;color:#8888aa">${i.empId}</span></td>
+          <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span></td>
+          <td>${i.target||'—'}</td>
+          <td>${i.targetVal||'—'}${i.group==='fat'?'%':'kg'}</td>
+          <td>${i.currentGap!==undefined?i.currentGap:' —'}${i.group==='fat'?'%':'kg'}</td>
+          <td>${progress}%</td>
+          <td style="color:#ffd700">${i.inbodyPts||0}</td>
+        </tr>`;
+      }).join('')}
+    </table>`;
+  } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗</div>'; }
+};
+
+window.calcRankPts = async function() {
+  if(!confirm('確定要計算並更新名次積分嗎？')) return;
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    const items = snap.docs.map(d => ({id:d.id, ...d.data()}));
+    const settSnap = await getDoc(doc(db, 'summer2026_settings', 'main'));
+    const sett = settSnap.data();
+    const fatItems = items.filter(i => i.group==='fat' && i.targetVal > 0).sort((a,b) => (a.currentGap||a.targetVal) - (b.currentGap||b.targetVal));
+    const muscleItems = items.filter(i => i.group==='muscle' && i.targetVal > 0).sort((a,b) => (a.currentGap||a.targetVal) - (b.currentGap||b.targetVal));
+    const rankPtsMap = [sett.rank1Pts||30, sett.rank2Pts||20, sett.rank3Pts||10];
+    const updates = [];
+    [fatItems, muscleItems].forEach(group => {
+      group.slice(0,3).forEach((emp, idx) => {
+        updates.push(updateDoc(doc(db,'summer2026_employees',emp.id), { rankPts: rankPtsMap[idx]||0, totalPts: (emp.taskPts||0)+(emp.inbodyPts||0)+rankPtsMap[idx] }));
+      });
+    });
+    await Promise.all(updates);
+    alert('名次積分計算完成！');
+    loadInbody();
+  } catch(e) { alert('計算失敗：'+e.message); }
+};
+
+window.loadRanking = async function() {
+  const group = document.getElementById('rank-filter').value;
+  const wrap = document.getElementById('ranking-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    let items = snap.docs.map(d => d.data()).filter(i => i.group);
+    if(group) items = items.filter(i => i.group === group);
+    items.sort((a,b) => (b.totalPts||0) - (a.totalPts||0));
+    const medals = ['🥇','🥈','🥉'];
+    wrap.innerHTML = `<table>
+      <tr><th>名次</th><th>員工</th><th>暱稱</th><th>組別</th><th>任務分</th><th>體態分</th><th>名次分</th><th>總積分</th></tr>
+      ${items.map((i,idx) => `<tr>
+        <td>${medals[idx]||idx+1}</td>
+        <td>${i.name}<br><span style="font-size:10px;color:#8888aa">${i.empId}</span></td>
+        <td>${i.nickname||'—'}</td>
+        <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span></td>
+        <td>${i.taskPts||0}</td>
+        <td>${i.inbodyPts||0}</td>
+        <td>${i.rankPts||0}</td>
+        <td style="color:#ffd700;font-weight:700">${i.totalPts||0}</td>
+      </tr>`).join('')}
+    </table>`;
+  } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗</div>'; }
+};
+
+window.loadSettings = async function() {
+  try {
+    const snap = await getDoc(doc(db, 'summer2026_settings', 'main'));
+    settingsData = snap.data() || {};
+    const fields = [
+      ['dietPts','飲食打卡積分'],['exercisePts','運動打卡積分'],['exerciseBonus','運動爆擊積分'],
+      ['exerciseBonusEvery','每幾次爆擊'],['photoEssayPts','照片心得積分'],['healthyDietPts','健康飲食積分'],
+      ['ptsPerLetter','每幾分得字母'],['jellyConsecutiveDays','馬甲凍連續天數'],['jellyMaxCount','馬甲凍最多次數'],
+      ['muscleT1Kg','增肌低標(kg)'],['muscleT1Pts','增肌低標積分'],
+      ['muscleT2Kg','增肌中標(kg)'],['muscleT2Pts','增肌中標積分'],
+      ['muscleT3Kg','增肌高標(kg)'],['muscleT3Pts','增肌高標積分'],
+      ['fatT1Pct','減脂低標(%)'],['fatT1Pts','減脂低標積分'],
+      ['fatT2Pct','減脂中標(%)'],['fatT2Pts','減脂中標積分'],
+      ['fatT3Pct','減脂高標(%)'],['fatT3Pts','減脂高標積分'],
+      ['rank1Pts','第一名積分'],['rank2Pts','第二名積分'],['rank3Pts','第三名積分'],
+    ];
+    document.getElementById('settings-form').innerHTML = fields.map(([key,label]) => `
+      <div class="form-row">
+        <label class="form-label">${label}</label>
+        <input class="form-input" type="number" id="sett-${key}" value="${settingsData[key]??''}"/>
+      </div>
+    `).join('');
+  } catch(e) { console.error(e); }
+};
+
+window.saveSettings = async function() {
+  try {
+    const fields = ['dietPts','exercisePts','exerciseBonus','exerciseBonusEvery','photoEssayPts','healthyDietPts',
+      'ptsPerLetter','jellyConsecutiveDays','jellyMaxCount',
+      'muscleT1Kg','muscleT1Pts','muscleT2Kg','muscleT2Pts','muscleT3Kg','muscleT3Pts',
+      'fatT1Pct','fatT1Pts','fatT2Pct','fatT2Pts','fatT3Pct','fatT3Pts',
+      'rank1Pts','rank2Pts','rank3Pts'];
+    const updates = { updatedAt: new Date() };
+    fields.forEach(k => {
+      const el = document.getElementById('sett-'+k);
+      if(el) updates[k] = parseFloat(el.value)||0;
+    });
+    await updateDoc(doc(db, 'summer2026_settings', 'main'), updates);
+    alert('✅ 設定已儲存！');
+  } catch(e) { alert('儲存失敗：'+e.message); }
+};
+</script>
+</body>
+</html>

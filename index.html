@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ShapeShifter: Level Up Your Body</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#ffd700;--bg:#0d0d1a;--card:#1a1a2e;--border:#2a2a4a;--text:#e8e8ff;--dim:#8888aa;--hint:#4a4a6a;--fat:#ff6644;--muscle:#44aaff;--green:#44cc66;--red:#ff4444}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;max-width:480px;margin:0 auto;padding-bottom:80px}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(1px 1px at 15% 25%,rgba(255,255,255,.4) 0%,transparent 100%),radial-gradient(1px 1px at 45% 15%,rgba(255,255,255,.3) 0%,transparent 100%),radial-gradient(1px 1px at 75% 45%,rgba(255,255,255,.4) 0%,transparent 100%),radial-gradient(1px 1px at 25% 75%,rgba(255,255,255,.3) 0%,transparent 100%),radial-gradient(1px 1px at 85% 85%,rgba(255,255,255,.4) 0%,transparent 100%);pointer-events:none;z-index:0}
+.screen{display:none;position:relative;z-index:1}.screen.active{display:block}
+
+/* STEP INDICATOR */
+.steps{display:flex;align-items:center;justify-content:center;gap:0;padding:1.5rem 1rem 0.5rem}
+.step{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1}
+.step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid var(--border);background:var(--bg);color:var(--dim);transition:all .3s}
+.step-dot.active{border-color:var(--gold);color:var(--gold);background:#1a1800}
+.step-dot.done{border-color:var(--green);background:#1a3a1a;color:var(--green)}
+.step-label{font-size:9px;color:var(--dim);text-align:center;line-height:1.3}
+.step-line{flex:1;height:2px;background:var(--border);margin-bottom:16px;transition:background .3s}
+.step-line.done{background:var(--green)}
+
+/* INPUTS */
+.game-input{width:100%;background:#0d0d1a;border:1px solid var(--border);border-radius:10px;color:var(--text);padding:12px 16px;font-size:14px;font-family:'Noto Sans TC',sans-serif;outline:none;transition:border-color .2s}
+.game-input:focus{border-color:var(--gold)}
+.game-input::placeholder{color:var(--hint)}
+.err{font-size:12px;color:var(--red);min-height:18px;margin:4px 0}
+
+/* BUTTONS */
+.btn{padding:10px 20px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;transition:opacity .2s,transform .1s;font-family:'Noto Sans TC',sans-serif}
+.btn:active{transform:scale(.98)}
+.btn:hover{opacity:.88}
+.btn-primary{background:#4a3a9a;color:#fff;width:100%;padding:13px}
+.btn-gold{background:var(--gold);color:#1a1a00}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
+
+/* STEP 1 - LOGIN */
+#s-login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem 1.5rem}
+.login-box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:2.5rem 2rem;width:100%;text-align:center}
+.pixel-title{font-family:'Press Start 2P',monospace;font-size:11px;color:var(--gold);line-height:2;margin-bottom:6px;text-shadow:0 0 20px rgba(255,215,0,.5)}
+.login-sub{font-size:12px;color:var(--dim);margin-bottom:2rem;line-height:1.7}
+
+/* STEP 2 - GROUP & CHAR */
+#s-group{padding:1rem}
+.group-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.gtab{padding:12px;border-radius:10px;text-align:center;font-size:13px;font-weight:700;cursor:pointer;border:2px solid var(--border);color:var(--dim);background:transparent;transition:all .2s}
+.gtab.fat-on{border-color:var(--fat);color:var(--fat);background:#2a1008}
+.gtab.muscle-on{border-color:var(--muscle);color:var(--muscle);background:#081828}
+.lock-note{font-size:11px;color:var(--hint);background:var(--card);border-radius:7px;padding:7px 10px;margin-bottom:12px}
+.char-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.char-card{background:var(--card);border:2px solid transparent;border-radius:14px;padding:12px 6px;text-align:center;cursor:pointer;transition:border-color .15s,transform .1s}
+.char-card:hover{transform:translateY(-2px)}
+.char-card.sel{border-color:var(--gold)}
+.char-name{font-size:13px;font-weight:700;margin-top:6px}
+.char-slogan{font-size:10px;color:var(--dim);margin-top:4px;line-height:1.4;padding:0 2px}
+
+/* STEP 3 - NICKNAME */
+#s-nick{padding:1.5rem 1rem;min-height:60vh;display:flex;flex-direction:column}
+.nick-preview{background:var(--card);border-radius:14px;padding:1.5rem;text-align:center;margin-bottom:1.5rem}
+.nick-emoji{font-size:40px;margin-bottom:8px}
+.nick-name{font-size:16px;font-weight:700}
+.nick-sub{font-size:12px;color:var(--dim);margin-top:4px}
+
+/* STEP 4 - INBODY */
+#s-inbody{padding:1rem}
+.inbody-desc{font-size:12px;color:var(--dim);background:var(--card);border-radius:8px;padding:10px 12px;margin-bottom:1rem;line-height:1.6}
+.inbody-form{display:flex;flex-direction:column;gap:12px;margin-bottom:1.5rem}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-label{font-size:12px;color:var(--dim);font-weight:500}
+.unit-row{display:flex;gap:8px;align-items:center}
+.unit-label{font-size:13px;color:var(--dim);white-space:nowrap}
+
+/* MAIN */
+#s-main{padding:1rem 1rem 0}
+.hud{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.hud-avatar{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--gold);flex-shrink:0;background:#0d0d1a;overflow:hidden}
+.hud-info{flex:1;min-width:0}
+.hud-name{font-size:14px;font-weight:700}
+.hud-title{font-size:10px;color:var(--gold);margin-top:2px}
+.lv-bg{height:5px;border-radius:3px;background:#0d0d1a;margin-top:6px;overflow:hidden}
+.lv-fill{height:5px;border-radius:3px;background:linear-gradient(90deg,#4a3a9a,var(--gold));transition:width .6s}
+.lv-hint{font-size:10px;color:var(--dim);margin-top:3px}
+.hud-pts{font-size:24px;font-weight:700;color:var(--gold);line-height:1;text-align:right}
+.hud-pts-label{font-size:10px;color:var(--dim);text-align:right}
+
+.map-wrap{background:#0a1a0a;border:1px solid #2a4a2a;border-radius:14px;padding:10px;margin-bottom:10px;overflow:hidden}
+.map-label{font-family:'Press Start 2P',monospace;font-size:7px;color:#7ab87a;margin-bottom:6px}
+
+.sec-hd{font-size:13px;font-weight:700;color:var(--dim);margin:14px 0 8px;display:flex;align-items:center;justify-content:space-between}
+.sec-btn{font-size:11px;padding:3px 10px;border:0.5px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;color:var(--dim)}
+.sec-btn:hover{background:var(--card)}
+
+.quest-list{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
+.quest-item{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.q-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.q-body{flex:1;min-width:0}
+.q-title{font-size:12px;font-weight:700}
+.q-desc{font-size:10px;color:var(--dim);margin-top:2px;line-height:1.4}
+.q-btn{font-size:10px;padding:5px 8px;border-radius:7px;border:none;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.q-todo{background:#1a1a3a;color:#8888ff}.q-todo:hover{background:#2a2a5a}
+.q-done{background:#1a3a1a;color:#66cc66;cursor:default}
+.q-pending{background:#3a2a00;color:#ffaa00;cursor:default}
+
+.weekly-card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:4px}
+.w-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}.w-row:last-child{margin-bottom:0}
+.w-label{font-size:11px;color:var(--dim);width:70px;flex-shrink:0}
+.w-slots{display:flex;gap:5px;flex:1}
+.w-slot{width:30px;height:30px;border-radius:7px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px}
+.w-slot.done{background:#1a3a1a;border-color:#3a6a3a}
+.w-slot.combo{background:#2a3a00;border-color:#aacc00}
+.w-bonus{font-size:10px;color:#aacc00}
+.w-bonus.dim{color:var(--hint)}
+
+.reward-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.reward-card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.reward-icon{font-size:26px;margin-bottom:6px}
+.reward-title{font-size:12px;font-weight:700;margin-bottom:4px}
+.reward-cond{font-size:10px;color:var(--dim);line-height:1.5}
+.reward-pb{height:4px;border-radius:2px;background:#0d0d1a;margin-top:8px;overflow:hidden}
+.reward-pf{height:4px;border-radius:2px;transition:width .5s}
+.reward-val{font-size:10px;color:var(--hint);margin-top:5px}
+.jelly-slots{display:flex;gap:4px;justify-content:center;margin-top:6px}
+.jelly-slot{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px}
+.jelly-slot.earned{background:#1a3a1a;border-color:#3a6a3a}
+
+.rank-card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:4px}
+.rank-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border)}
+.rank-row:last-child{border-bottom:none}
+.rank-row.me{background:rgba(255,215,0,.05);border-radius:8px;padding:6px 6px}
+.rnum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.rn-gold{background:var(--gold);color:#3a2a00}.rn-silver{background:#aaa;color:#fff}.rn-bronze{background:#cc8844;color:#fff}.rn-norm{background:#2a2a4a;color:var(--dim)}
+.r-name{flex:1;font-size:13px}
+.r-pts{font-size:13px;font-weight:700;color:var(--gold)}
+
+.spell-card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:4px}
+.spell-boxes{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}
+.sbox{width:28px;height:32px;border-radius:5px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:#0d0d1a;color:var(--hint)}
+.sbox.filled{background:#1a1a3a;border-color:#6666cc;color:#aaaaff}
+.sbox.complete{background:#1a3a1a;border-color:#44cc44;color:#66ff66}
+
+/* PROFILE PAGE */
+#s-profile{padding:1rem}
+.profile-card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:10px}
+.p-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.p-row:last-child{margin-bottom:0}
+.p-label{font-size:12px;color:var(--dim)}
+.p-val{font-size:13px;font-weight:700}
+.p-badge{font-size:12px;padding:3px 10px;border-radius:6px;font-weight:700}
+.lock-tag{font-size:10px;color:var(--hint);padding:2px 7px;background:#0d0d1a;border-radius:5px}
+.change-btn{width:100%;padding:10px;background:transparent;border:0.5px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:13px}
+.change-btn:hover{background:#1a1a2e}
+.inbody-update{display:flex;flex-direction:column;gap:8px}
+.logout-btn{width:100%;padding:11px;background:transparent;border:1px solid #cc4444;border-radius:10px;color:#ff6666;cursor:pointer;font-size:13px;font-weight:700;margin-top:4px}
+.logout-btn:hover{background:rgba(204,68,68,.1)}
+
+/* NAV */
+.nav-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--card);border-top:1px solid var(--border);display:flex;z-index:100}
+.nav-btn{flex:1;padding:12px 0;background:transparent;border:none;font-size:10px;color:var(--dim);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .15s}
+.nav-icon{font-size:18px}
+.nav-btn.active{color:var(--gold)}
+.nav-btn:hover{color:var(--text)}
+
+/* UPLOAD */
+.upload-area{border:2px dashed var(--border);border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;margin:8px 0;transition:border-color .2s}
+.upload-area:hover{border-color:var(--gold)}
+.upload-area input{display:none}
+.upload-preview{width:100%;max-height:200px;object-fit:cover;border-radius:8px;margin-top:8px;display:none}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1a3a1a;border:1px solid #3a6a3a;color:#66cc66;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ══ STEP 1: LOGIN ══ -->
+<div id="s-login" class="screen active">
+  <div class="login-box">
+    <div class="pixel-title">SHAPE<br>SHIFTER</div>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:4px;font-family:'Press Start 2P',monospace">LEVEL UP YOUR BODY</div>
+    <div class="login-sub">2026 夏季體態進化挑戰<br>7/6 – 8/20　共 45 天</div>
+    <input class="game-input" type="text" id="emp-input" placeholder="輸入員工編號（如 SM0001）" style="margin-bottom:8px"/>
+    <div class="err" id="login-err"></div>
+    <button class="btn btn-primary" onclick="doLogin()">▶ START GAME</button>
+  </div>
+</div>
+
+<!-- ══ STEP 2: GROUP & CHAR ══ -->
+<div id="s-group" class="screen">
+  <div class="steps" id="steps-group">
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot active">2</div><div class="step-label">選角色</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-dot">3</div><div class="step-label">設暱稱</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
+  </div>
+  <div style="padding:0 1rem 1rem">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px" id="group-title">選擇你的組別與角色</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:12px" id="group-sub">組別選定後不能更換，角色之後隨時可改</div>
+    <div class="group-tabs" id="group-tabs">
+      <div class="gtab" id="tab-fat" onclick="switchGroup('fat')">⚡ 減脂組</div>
+      <div class="gtab" id="tab-muscle" onclick="switchGroup('muscle')">💪 增肌組</div>
+    </div>
+    <div class="lock-note" id="lock-note">⚠️ 組別選定後即開始你的進化旅程，無法更換</div>
+    <div class="char-grid" id="char-grid"></div>
+    <button class="btn btn-primary" onclick="goToNick()">下一步 →</button>
+  </div>
+</div>
+
+<!-- ══ STEP 3: NICKNAME ══ -->
+<div id="s-nick" class="screen">
+  <div class="steps">
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot active">3</div><div class="step-label">設暱稱</div></div>
+    <div class="step-line"></div>
+    <div class="step"><div class="step-dot">4</div><div class="step-label">目標設定</div></div>
+  </div>
+  <div style="padding:0 1rem 1rem;flex:1;display:flex;flex-direction:column">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定冒險者暱稱</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:1rem">排行榜上顯示的名稱，之後可以更改</div>
+    <div class="nick-preview">
+      <canvas id="nick-canvas" width="72" height="96" style="display:block;margin:0 auto 8px;image-rendering:pixelated"></canvas>
+      <div class="nick-name" id="nick-char-name">—</div>
+      <div class="nick-sub" id="nick-char-slogan">—</div>
+    </div>
+    <input class="game-input" type="text" id="nick-input" placeholder="輸入暱稱（最多8字）" maxlength="8" style="margin-bottom:8px"/>
+    <div class="err" id="nick-err"></div>
+    <div style="display:flex;gap:8px;margin-top:auto">
+      <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-group')">← 返回</button>
+      <button class="btn btn-primary" style="flex:1" onclick="goToInbody()">下一步 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STEP 4: INBODY ══ -->
+<div id="s-inbody" class="screen">
+  <div class="steps">
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">登入</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">選角色</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot done">✓</div><div class="step-label">設暱稱</div></div>
+    <div class="step-line done"></div>
+    <div class="step"><div class="step-dot active">4</div><div class="step-label">目標設定</div></div>
+  </div>
+  <div style="padding:0 1rem 1rem">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">設定體態目標</div>
+    <div class="inbody-desc">根據你的 InBody 前測數據，設定你的目標。<br>不需填寫實際體重或體脂，只填差距即可，保護個人隱私。</div>
+    <div class="inbody-form" id="inbody-form">
+      <!-- 動態生成 by JS -->
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:0 0 80px" onclick="showScreen('s-nick')">← 返回</button>
+      <button class="btn btn-primary" style="flex:1" onclick="completeSetup()">🚀 開始冒險！</button>
+    </div>
+    <div style="text-align:center;margin-top:10px">
+      <span style="font-size:11px;color:var(--hint);cursor:pointer;text-decoration:underline" onclick="skipInbody()">跳過，稍後再填</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAIN ══ -->
+<div id="s-main" class="screen">
+  <div class="hud">
+    <div class="hud-avatar"><canvas id="hud-canvas" width="44" height="44" style="image-rendering:pixelated"></canvas></div>
+    <div class="hud-info">
+      <div class="hud-name" id="hud-name">冒險者</div>
+      <div class="hud-title" id="hud-title">體態實習生</div>
+      <div class="lv-bg"><div class="lv-fill" id="lv-fill" style="width:0%"></div></div>
+      <div class="lv-hint" id="lv-hint"></div>
+    </div>
+    <div>
+      <div class="hud-pts" id="hud-pts">0</div>
+      <div class="hud-pts-label">積分</div>
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <div class="map-label">45-DAY QUEST MAP　DAY <span id="map-day">1</span>/45</div>
+    <svg viewBox="0 0 640 80" width="100%" style="display:block">
+      <rect width="640" height="80" fill="#0a1a0a"/>
+      <rect x="0" y="58" width="640" height="22" fill="#1a3a1a"/>
+      <rect x="0" y="52" width="640" height="8" fill="#2a4a2a"/>
+      <rect x="22" y="26" width="10" height="24" fill="#2d6b1a"/>
+      <rect x="15" y="14" width="24" height="16" fill="#3a8a22"/>
+      <rect x="200" y="32" width="8" height="18" fill="#2d6b1a"/>
+      <rect x="194" y="22" width="20" height="14" fill="#3a8a22"/>
+      <rect x="400" y="28" width="10" height="22" fill="#2d6b1a"/>
+      <rect x="394" y="16" width="24" height="16" fill="#3a8a22"/>
+      <rect x="558" y="14" width="20" height="38" fill="#8a7a2a"/>
+      <rect x="561" y="2" width="14" height="16" fill="#c4a832"/>
+      <rect x="557" y="-1" width="22" height="6" fill="#e8c83a"/>
+      <text x="572" y="12" fill="#ffdd44" font-size="10" font-family="monospace">★</text>
+      <g id="map-cells"></g>
+      <g id="player-marker">
+        <ellipse cx="0" cy="54" rx="9" ry="3" fill="#ffd700" opacity="0.3"/>
+        <rect x="-6" y="40" width="12" height="14" rx="3" fill="#e8b87a"/>
+        <rect x="-4" y="33" width="8" height="9" rx="4" fill="#f5c9a0"/>
+        <ellipse cx="-1.5" cy="37" rx="1.3" ry="1.6" fill="#3a2010"/>
+        <ellipse cx="2.5" cy="37" rx="1.3" ry="1.6" fill="#3a2010"/>
+        <rect x="-6" y="54" width="5" height="5" rx="1" fill="#4a3a9a"/>
+        <rect x="1" y="54" width="5" height="5" rx="1" fill="#4a3a9a"/>
+        <rect x="-10" y="42" width="5" height="8" rx="2" fill="#4a3a9a"/>
+        <rect x="5" y="42" width="5" height="8" rx="2" fill="#4a3a9a"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="sec-hd">今日任務</div>
+  <div class="quest-list">
+    <div class="quest-item">
+      <div class="q-icon" style="background:#1a3a1a">🥗</div>
+      <div class="q-body">
+        <div class="q-title">【糧草紀錄】飲食打卡</div>
+        <div class="q-desc">上傳 WonderFood-AI 日統計截圖　+1分</div>
+      </div>
+      <button class="q-btn q-todo" onclick="openUpload('飲食打卡',1)">▶ 上傳</button>
+    </div>
+    <div class="quest-item">
+      <div class="q-icon" style="background:#2a2a00">🏅</div>
+      <div class="q-body">
+        <div class="q-title">【聖餐檢定】健康飲食達標</div>
+        <div class="q-desc">每週4次達80%營養成分　+2分</div>
+      </div>
+      <button class="q-btn q-todo" onclick="openUpload('健康飲食',2)">▶ 上傳</button>
+    </div>
+    <div class="quest-item">
+      <div class="q-icon" style="background:#1a1a3a">🏋️</div>
+      <div class="q-body">
+        <div class="q-title">【神兵加持】運動打卡</div>
+        <div class="q-desc">上傳運動證明　+1分（每3次爆擊+3）</div>
+      </div>
+      <button class="q-btn q-todo" onclick="openUpload('運動打卡',1)">▶ 上傳</button>
+    </div>
+    <div class="quest-item">
+      <div class="q-icon" style="background:#2a1a00">📸</div>
+      <div class="q-body">
+        <div class="q-title">【英雄傳說】照片＋心得</div>
+        <div class="q-desc">3張照片＋100字心得　+5分</div>
+      </div>
+      <button class="q-btn q-todo" onclick="openUpload('照片心得',5)">▶ 上傳</button>
+    </div>
+  </div>
+
+  <div class="sec-hd">每週副本</div>
+  <div class="weekly-card">
+    <div class="w-row">
+      <div class="w-label">飲食連續技</div>
+      <div class="w-slots" id="diet-slots"></div>
+      <div class="w-bonus dim" id="diet-bonus">第4次→Combo+2</div>
+    </div>
+    <div class="w-row">
+      <div class="w-label">運動三連擊</div>
+      <div class="w-slots" id="sport-slots"></div>
+      <div class="w-bonus dim" id="sport-bonus">第3次→爆擊+3</div>
+    </div>
+  </div>
+
+  <div class="sec-hd">🍮 馬甲果凍進度</div>
+  <div class="reward-card" style="margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="font-size:28px">🍮</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:700;margin-bottom:2px">【m2美度】超能馬甲果凍</div>
+        <div style="font-size:10px;color:var(--dim)">連續10天登入＋飲食打卡 → 兌換一次（最多5次）</div>
+        <div class="reward-pb" style="margin-top:6px"><div class="reward-pf" id="jelly-bar" style="background:#66cc66;width:0%"></div></div>
+        <div style="font-size:10px;color:var(--hint);margin-top:3px" id="jelly-hint">連續 0 / 10 天</div>
+      </div>
+    </div>
+    <div class="jelly-slots" id="jelly-slots"></div>
+  </div>
+
+  <div class="sec-hd">寶藏庫</div>
+  <div class="reward-grid">
+    <div class="reward-card">
+      <div class="reward-icon">🗝️</div>
+      <div class="reward-title">完賽禮</div>
+      <div class="reward-cond">3張照片＋心得<br>＋達低標</div>
+      <div class="reward-pb"><div class="reward-pf" id="pb-complete" style="background:var(--gold);width:0%"></div></div>
+      <div class="reward-val" id="pv-complete">未達成</div>
+    </div>
+    <div class="reward-card">
+      <div class="reward-icon">🏆</div>
+      <div class="reward-title">競賽獎</div>
+      <div class="reward-cond">增肌/減脂<br>前三名 $3,000~$10,000</div>
+      <div class="reward-pb"><div class="reward-pf" id="pb-rank" style="background:var(--muscle);width:0%"></div></div>
+      <div class="reward-val" id="pv-rank">排行計算中</div>
+    </div>
+  </div>
+
+  <div class="sec-hd">即時戰報 <button class="sec-btn" onclick="loadRanking()">↻ 更新</button></div>
+  <div class="rank-card" id="rank-wrap">
+    <div style="text-align:center;font-size:12px;color:var(--dim);padding:8px">點「更新」載入排行榜</div>
+  </div>
+
+  <div class="sec-hd">拼字挑戰</div>
+  <div class="spell-card">
+    <div style="font-size:11px;color:var(--dim)">每滿8分獲得隨機字母，集齊 SHINYBRANDS → 🎉 Bonus 獎勵待公布！</div>
+    <div class="spell-boxes" id="spell-boxes"></div>
+    <div style="font-size:11px;color:var(--dim)" id="spell-status">尚未收集任何字母</div>
+  </div>
+
+  <div class="nav-bar">
+    <button class="nav-btn active" id="nav-map" onclick="showTab('map')"><span class="nav-icon">🗺️</span>地圖</button>
+    <button class="nav-btn" id="nav-me" onclick="showTab('me')"><span class="nav-icon">👤</span>我的</button>
+  </div>
+</div>
+
+<!-- ══ PROFILE ══ -->
+<div id="s-profile" class="screen">
+  <div style="padding:1rem 1rem 0">
+    <div class="sec-hd" style="margin-top:0">我的資料</div>
+    <div class="profile-card">
+      <div class="p-row"><span class="p-label">員工編號</span><span class="p-val" id="p-empid">—</span></div>
+      <div class="p-row">
+        <span class="p-label">組別</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="p-badge" id="p-group">—</span>
+          <span class="lock-tag">🔒 鎖定</span>
+        </div>
+      </div>
+      <div class="p-row" style="margin-bottom:0">
+        <span class="p-label">累積積分</span>
+        <span class="p-val" id="p-pts" style="color:var(--gold)">0 分</span>
+      </div>
+    </div>
+
+    <div class="sec-hd">角色（可更換）</div>
+    <div class="profile-card">
+      <div style="text-align:center;margin-bottom:10px">
+        <canvas id="p-canvas" width="72" height="96" style="display:block;margin:0 auto 6px;image-rendering:pixelated"></canvas>
+        <div style="font-size:14px;font-weight:700" id="p-char-name">—</div>
+        <div style="font-size:11px;color:var(--dim);margin-top:2px" id="p-char-slogan">—</div>
+      </div>
+      <button class="change-btn" onclick="goChangeChar()">更換角色</button>
+    </div>
+
+    <div class="sec-hd">暱稱（可更換）</div>
+    <div class="profile-card">
+      <div style="display:flex;gap:8px">
+        <input class="game-input" type="text" id="p-nick" placeholder="輸入新暱稱" maxlength="8" style="flex:1"/>
+        <button class="btn btn-gold" onclick="saveNick()">儲存</button>
+      </div>
+    </div>
+
+    <div class="sec-hd">本週 InBody 更新</div>
+    <div class="profile-card">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.6">每週測量 InBody 後，更新「距離目標還差多少」。不需填入實際數值，只填差距。</div>
+      <div class="inbody-update" id="inbody-update-form"></div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="saveInbodyUpdate()">更新本週數據</button>
+    </div>
+
+    <button class="logout-btn" onclick="doLogout()">登出</button>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-btn" id="pnav-map" onclick="showTab('map')"><span class="nav-icon">🗺️</span>地圖</button>
+    <button class="nav-btn active" id="pnav-me" onclick="showTab('me')"><span class="nav-icon">👤</span>我的</button>
+  </div>
+</div>
+
+<!-- UPLOAD MODAL -->
+<div id="upload-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;align-items:flex-end;justify-content:center">
+  <div style="background:var(--card);border-radius:20px 20px 0 0;padding:1.5rem;width:100%;max-width:480px">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px" id="upload-title">上傳打卡截圖</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:1rem" id="upload-desc">—</div>
+    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+      <div style="font-size:24px;margin-bottom:4px">📎</div>
+      <div style="font-size:13px;color:var(--dim)">點擊選擇截圖</div>
+      <input type="file" id="file-input" accept="image/*" onchange="previewFile(event)"/>
+      <img id="upload-preview" class="upload-preview"/>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-outline" style="flex:1" onclick="closeUpload()">取消</button>
+      <button class="btn btn-primary" style="flex:1" id="submit-btn" onclick="submitCheckin()">✅ 送出打卡</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, query, where, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCRzerWEnFDmPcCcRCETsMlp8WdAT0k90E",
+  authDomain: "shiny-slim-project.firebaseapp.com",
+  projectId: "shiny-slim-project",
+  storageBucket: "shiny-slim-project.firebasestorage.app",
+  messagingSenderId: "54178644265",
+  appId: "1:54178644265:web:c5a1ccf91a0d3b5ab2b738"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+const TARGET = 'SHINYBRANDS';
+const START_DATE = new Date('2026-07-06');
+const CHARS = {
+  fat:[
+    {id:'assassin',name:'刺客',slogan:'燃燒每一卡，消滅每一克',color:'#cc88ff',bg:'#1a0a2a'},
+    {id:'hunter',name:'獵人',slogan:'鎖定脂肪，追蹤到底',color:'#88cc66',bg:'#0a1a0a'},
+    {id:'ninja',name:'忍者',slogan:'悄悄瘦下去，驚豔所有人',color:'#8899ff',bg:'#0a0a1a'},
+  ],
+  muscle:[
+    {id:'knight',name:'騎士',slogan:'每一下都是鎧甲，鍛鍊出鋼鐵之軀',color:'#88aaff',bg:'#081020'},
+    {id:'warrior',name:'戰士',slogan:'汗水澆灌肌肉，痛苦雕刻線條',color:'#ff8888',bg:'#200808'},
+    {id:'hero',name:'勇者',slogan:'從平凡到傳說，一塊肌肉一個故事',color:'#ffcc44',bg:'#181000'},
+  ]
+};
+const LEVELS=[
+  {min:0,title:'體態實習生',next:30},
+  {min:30,title:'熱血冒險者 🔥',next:60},
+  {min:60,title:'全能達人 🏆',next:100},
+  {min:100,title:'體態傳奇聖王 👑',next:999},
+];
+
+let S = { empId:'', empName:'', group:'', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, targetVal:0, currentGap:0, target:'', changingChar:false };
+let currentUploadTask = null;
+let selectedFile = null;
+let settings = {};
+
+// ── PIXEL DRAW ──
+function px(ctx,x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x*3,y*3,w*3,h*3);}
+function drawFace(ctx,skin,hair,eye){
+  ctx.beginPath();ctx.arc(12*3,10*3,10*3,0,Math.PI*2);ctx.fillStyle=skin;ctx.fill();
+  ctx.fillStyle=hair;ctx.fillRect(3*3,2*3,18*3,5*3);
+  ctx.beginPath();ctx.arc(3*3,7*3,3*3,Math.PI,0);ctx.fill();
+  ctx.beginPath();ctx.arc(21*3,7*3,3*3,Math.PI,0);ctx.fill();
+  ['#fff',eye,'#fff'].forEach((c,i)=>{
+    const r=[2.5,1.6,.6][i];
+    [9,15].forEach(cx=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(cx*3,(10+[0,0.5,.7][i])*3,r*3,0,Math.PI*2);ctx.fill();});
+  });
+  ctx.fillStyle='rgba(255,150,130,.5)';
+  [7,17].forEach(cx=>{ctx.beginPath();ctx.ellipse(cx*3,13*3,2.5*3,1.5*3,0,0,Math.PI*2);ctx.fill();});
+  ctx.strokeStyle='#cc7060';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(9*3,15.5*3);ctx.quadraticCurveTo(12*3,17.5*3,15*3,15.5*3);ctx.stroke();
+}
+function drawChar(ctx,id,day){
+  ctx.clearRect(0,0,72,96);
+  const s=day>=41?3:day>=25?2:day>=11?1:0;
+  if(id==='assassin'){
+    const ww=[14,12,9,7][s],wx=Math.floor((24-ww)/2);
+    px(ctx,wx,19,ww,10,'#2a1a3a');px(ctx,4,19,wx-4,9,'#2a1a3a');px(ctx,wx+ww,19,24-(wx+ww),9,'#2a1a3a');
+    if(s>=2){px(ctx,10,22,2,5,'#cc44ff');px(ctx,16,22,2,5,'#cc44ff');}
+    px(ctx,1,19,5,10,'#2a1a3a');px(ctx,18,19,5,10,'#2a1a3a');
+    if(s>=1){px(ctx,0,20,2,7,'#884499');px(ctx,22,20,2,7,'#884499');}
+    px(ctx,6,29,5,12,s>=2?'#0a0a14':'#1a0a2a');px(ctx,13,29,5,12,s>=2?'#0a0a14':'#1a0a2a');
+    px(ctx,6,40,5,3,'#884499');px(ctx,13,40,5,3,'#884499');
+    if(s>=3){ctx.fillStyle='rgba(200,68,255,.15)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+    drawFace(ctx,'#f5c9a0','#1a0a1a','#2a0a3a');
+  } else if(id==='hunter'){
+    const lw=[7,6,5,4][s],lx=Math.floor((11-lw)/2)+5,rx=13+Math.floor((11-lw)/2);
+    px(ctx,6,19,12,10,'#3a5a1a');px(ctx,3,19,4,9,'#d4a870');px(ctx,17,19,4,9,'#d4a870');
+    px(ctx,2,20,2,7,'#6a9a3a');px(ctx,20,20,2,7,'#6a9a3a');
+    px(ctx,lx,29,lw,13,'#4a6a2a');px(ctx,rx,29,lw,13,'#4a6a2a');
+    if(s>=2){px(ctx,lx-1,30,2,11,'#6a9a3a');px(ctx,rx+lw-1,30,2,11,'#6a9a3a');}
+    px(ctx,lx,41,lw,3,'#6a9a3a');px(ctx,rx,41,lw,3,'#6a9a3a');
+    if(s>=3){ctx.fillStyle='rgba(100,200,60,.12)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+    drawFace(ctx,'#d4a870','#4a2a0a','#2a1000');
+  } else if(id==='ninja'){
+    const belly=[5,3,1,0][s];
+    px(ctx,6,19,12,2,'#1a1a2a');if(belly>0)px(ctx,8,21,8,belly,'#2a2a3a');
+    px(ctx,6,21+belly,12,10-belly,'#1a1a2a');px(ctx,3,19,4,11,'#1a1a2a');px(ctx,17,19,4,11,'#1a1a2a');
+    if(s>=1){px(ctx,2,20,2,8,'#6644aa');px(ctx,20,20,2,8,'#6644aa');}
+    px(ctx,7,30,5,13,s>=2?'#0a0a14':'#1a1a2a');px(ctx,12,30,5,13,s>=2?'#0a0a14':'#1a1a2a');
+    px(ctx,7,42,5,2,'#6644aa');px(ctx,12,42,5,2,'#6644aa');
+    ctx.fillStyle='#e0a878';ctx.beginPath();ctx.arc(12*3,10*3,10*3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#0a0a14';ctx.fillRect(3*3,1*3,18*3,5*3);
+    ctx.beginPath();ctx.arc(3*3,6*3,3*3,Math.PI,0);ctx.fill();ctx.beginPath();ctx.arc(21*3,6*3,3*3,Math.PI,0);ctx.fill();
+    ctx.fillStyle='#1a1a2a';ctx.fillRect(4*3,12*3,16*3,7*3);
+    ['#fff','#2a0a3a','#fff'].forEach((c,i)=>{
+      const r=[2.5,1.6,.6][i];[9,15].forEach(cx=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(cx*3,(10+[0,.5,.7][i])*3,r*3,0,Math.PI*2);ctx.fill();});
+    });
+    if(s>=3){ctx.fillStyle='rgba(150,80,255,.15)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+  } else if(id==='knight'){
+    const aw=[3,4,5,7][s],armor=['#6a7a8a','#7a8a9a','#9aaabb','#bbccdd'][s];
+    ctx.fillStyle=armor;ctx.beginPath();ctx.arc(12*3,8*3,10*3,Math.PI,0);ctx.fill();ctx.fillRect(3*3,8*3,18*3,4*3);
+    px(ctx,5,10,14,3,'#c8d8e8');px(ctx,5,19,14,11,armor);px(ctx,9,21,6,7,'#c8d8e8');
+    px(ctx,3-Math.floor(aw/3),19,aw+2,12,armor);px(ctx,21-aw+1,19,aw+2,12,armor);
+    if(s>=2){px(ctx,2,21,2,8,'#c8d8e8');px(ctx,20,21,2,8,'#c8d8e8');}
+    px(ctx,7,30,5,14,armor);px(ctx,12,30,5,14,armor);px(ctx,7,43,5,3,'#c8d8e8');px(ctx,12,43,5,3,'#c8d8e8');
+    if(s>=3){ctx.fillStyle='rgba(180,210,240,.12)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+    px(ctx,6,9,12,7,'#e8c090');
+    ['#fff','#0a2040','#fff'].forEach((c,i)=>{const r=[2.2,1.4,.5][i];[9,15].forEach(cx=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(cx*3,(12+[0,.5,.7][i])*3,r*3,0,Math.PI*2);ctx.fill();});});
+    ctx.strokeStyle='#cc7060';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(9*3,16*3);ctx.quadraticCurveTo(12*3,18*3,15*3,16*3);ctx.stroke();
+  } else if(id==='warrior'){
+    const bw=[14,14,16,18][s],bx=Math.floor((24-bw)/2),aw=[3,4,5,7][s];
+    const suit=['#8a2a2a','#aa2a2a','#cc2a2a','#ee2a2a'][s];
+    px(ctx,bx,19,bw,11,suit);
+    if(s>=1){px(ctx,10,21,2,7,'#c87840');px(ctx,16,21,2,7,'#c87840');}
+    if(s>=2){px(ctx,8,20,5,9,'#c87840');px(ctx,11,20,6,9,'#c87840');}
+    if(s>=3){px(ctx,6,19,12,10,'#c87840');px(ctx,9,21,6,7,'#a05828');}
+    px(ctx,2,19,aw+1,12,s>=2?'#c87840':suit);px(ctx,21-aw,19,aw+1,12,s>=2?'#c87840':suit);
+    if(s>=1){px(ctx,1,22,2,7,'#c87840');px(ctx,21,22,2,7,'#c87840');}
+    px(ctx,7,30,5,13,'#6a1a1a');px(ctx,12,30,5,13,'#6a1a1a');px(ctx,7,42,5,3,'#aa3a3a');px(ctx,12,42,5,3,'#aa3a3a');
+    if(s>=3){ctx.fillStyle='rgba(255,60,60,.12)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+    drawFace(ctx,'#c87840','#1a0a00','#200800');
+  } else if(id==='hero'){
+    const cw=[10,12,14,18][s],cx2=Math.floor((24-cw)/2);
+    const shirt=['#6a88cc','#4a68cc','#2a48cc','#1a38cc'][s];
+    const hairC=s>=3?'#ffcc00':'#aa8800';
+    px(ctx,cx2,19,cw,11,shirt);
+    if(s>=1){px(ctx,10,20,3,6,'#e0b880');px(ctx,11,20,6,6,shirt);}
+    if(s>=2){px(ctx,7,19,5,9,'#e0b880');px(ctx,12,19,5,9,'#e0b880');px(ctx,10,22,4,5,shirt);}
+    if(s>=3){px(ctx,5,18,8,11,'#e0b880');px(ctx,11,18,8,11,'#e0b880');px(ctx,9,21,6,7,'#c89040');}
+    px(ctx,2,19,5,11,s>=2?'#e0b880':shirt);px(ctx,17,19,5,11,s>=2?'#e0b880':shirt);
+    if(s>=2){px(ctx,1,21,3,8,'#e0b880');px(ctx,20,21,3,8,'#e0b880');}
+    if(s>=3){px(ctx,0,19,3,4,'#ffcc00');px(ctx,21,19,3,4,'#ffcc00');}
+    px(ctx,7,30,5,13,'#1a1a5a');px(ctx,12,30,5,13,'#1a1a5a');px(ctx,7,42,5,3,'#4a4a9a');px(ctx,12,42,5,3,'#4a4a9a');
+    if(s>=3){ctx.fillStyle='rgba(255,200,0,.12)';ctx.beginPath();ctx.ellipse(12*3,16*3,14*3,6*3,0,0,Math.PI*2);ctx.fill();}
+    drawFace(ctx,'#e0b880',hairC,'#1a0a40');
+  }
+}
+
+function getDay(){const d=Math.floor((new Date()-START_DATE)/86400000)+1;return Math.max(1,Math.min(d,45));}
+function getLevel(p){let lv=LEVELS[0];for(const l of LEVELS){if(p>=l.min)lv=l;}return lv;}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+
+// ── LOGIN ──
+window.doLogin = async function(){
+  const v=document.getElementById('emp-input').value.trim().toUpperCase();
+  const err=document.getElementById('login-err');
+  if(!v){err.textContent='請輸入員工編號';return;}
+  try{
+    const snap=await getDoc(doc(db,'summer2026_employees',v));
+    if(!snap.exists()){err.textContent='找不到此員工編號，請確認';return;}
+    err.textContent='';
+    const data=snap.data();
+    Object.assign(S,{empId:v,empName:data.name,...data});
+    // Load settings
+    const sSnap=await getDoc(doc(db,'summer2026_settings','main'));
+    if(sSnap.exists()) settings=sSnap.data();
+    if(S.group){showScreen('s-main');renderMain();}
+    else{showScreen('s-group');switchGroup('fat');}
+  }catch(e){err.textContent='連線失敗，請稍後再試';}
+};
+
+// ── GROUP / CHAR ──
+window.switchGroup = function(g){
+  if(S.changingChar)return;
+  S.group=g;
+  document.getElementById('tab-fat').className='gtab'+(g==='fat'?' fat-on':'');
+  document.getElementById('tab-muscle').className='gtab'+(g==='muscle'?' muscle-on':'');
+  renderCharGrid(g);
+};
+
+function renderCharGrid(g){
+  const grid=document.getElementById('char-grid');
+  const list=CHARS[g];
+  grid.innerHTML=list.map(c=>`
+    <div class="char-card${S.charId===c.id?' sel':''}" id="cc-${c.id}" onclick="selectChar('${c.id}')">
+      <canvas width="72" height="96" id="cc-c-${c.id}" style="display:block;margin:0 auto;image-rendering:pixelated"></canvas>
+      <div class="char-name">${c.name}</div>
+      <div class="char-slogan">${c.slogan}</div>
+    </div>
+  `).join('');
+  list.forEach(c=>{const cv=document.getElementById('cc-c-'+c.id);if(cv)drawChar(cv.getContext('2d'),c.id,1);});
+}
+
+window.selectChar=function(id){
+  S.charId=id;
+  document.querySelectorAll('.char-card').forEach(el=>el.classList.remove('sel'));
+  const el=document.getElementById('cc-'+id);if(el)el.classList.add('sel');
+};
+
+window.goToNick=function(){
+  if(!S.charId){alert('請先選擇角色！');return;}
+  if(!S.group){alert('請先選擇組別！');return;}
+  const all=[...CHARS.fat,...CHARS.muscle];
+  const c=all.find(x=>x.id===S.charId);
+  if(c){
+    const cv=document.getElementById('nick-canvas');
+    if(cv)drawChar(cv.getContext('2d'),c.id,getDay());
+    document.getElementById('nick-char-name').textContent=c.name;
+    document.getElementById('nick-char-slogan').textContent=c.slogan;
+  }
+  document.getElementById('nick-input').value=S.nickname||'';
+  showScreen('s-nick');
+};
+
+window.goToInbody=function(){
+  const nick=document.getElementById('nick-input').value.trim();
+  if(!nick){document.getElementById('nick-err').textContent='請輸入暱稱';return;}
+  document.getElementById('nick-err').textContent='';
+  S.nickname=nick;
+  renderInbodyForm();
+  showScreen('s-inbody');
+};
+
+function renderInbodyForm(){
+  const isFat=S.group==='fat';
+  document.getElementById('inbody-form').innerHTML=`
+    <div class="form-group">
+      <label class="form-label">我的目標（${isFat?'減脂 %':'增肌 kg'}）</label>
+      <div class="unit-row">
+        <input class="game-input" type="number" id="ib-target" placeholder="${isFat?'例如：3':'例如：0.8'}" step="${isFat?'0.1':'0.1'}" value="${S.targetVal||''}"/>
+        <span class="unit-label">${isFat?'%':'kg'}</span>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">目前距離目標還差（前測 InBody 後填寫）</label>
+      <div class="unit-row">
+        <input class="game-input" type="number" id="ib-gap" placeholder="${isFat?'例如：3':'例如：0.8'}" step="0.1" value="${S.currentGap||''}"/>
+        <span class="unit-label">${isFat?'%':'kg'}</span>
+      </div>
+    </div>
+  `;
+}
+
+window.completeSetup=async function(){
+  const targetVal=parseFloat(document.getElementById('ib-target')?.value)||0;
+  const currentGap=parseFloat(document.getElementById('ib-gap')?.value)||0;
+  S.targetVal=targetVal; S.currentGap=currentGap;
+  S.target=S.group==='fat'?`減脂 ${targetVal}%`:`增肌 ${targetVal}kg`;
+  await saveUserData();
+  showScreen('s-main');renderMain();
+};
+
+window.skipInbody=async function(){
+  await saveUserData();
+  showScreen('s-main');renderMain();
+};
+
+async function saveUserData(){
+  try{
+    await updateDoc(doc(db,'summer2026_employees',S.empId),{
+      group:S.group, charId:S.charId, nickname:S.nickname,
+      targetVal:S.targetVal, currentGap:S.currentGap, target:S.target,
+      registeredAt:S.registeredAt||new Date()
+    });
+  }catch(e){console.error(e);}
+}
+
+// ── MAIN RENDER ──
+function renderMain(){
+  const day=getDay();
+  const hc=document.getElementById('hud-canvas');
+  if(hc&&S.charId)drawChar(hc.getContext('2d'),S.charId,day);
+  document.getElementById('hud-name').textContent=S.nickname||S.empName;
+  const lv=getLevel(S.totalPts||0);
+  document.getElementById('hud-title').textContent=lv.title;
+  document.getElementById('hud-pts').textContent=S.totalPts||0;
+  const pct=lv.next<999?Math.round(((S.totalPts||0)-lv.min)/(lv.next-lv.min)*100):100;
+  document.getElementById('lv-fill').style.width=Math.min(pct,100)+'%';
+  document.getElementById('lv-hint').textContent=lv.next<999?`距下個稱號還差 ${lv.next-(S.totalPts||0)} 分`:'已達最高稱號！';
+  document.getElementById('map-day').textContent=day;
+  renderMap(day);
+  renderSpell();
+  renderJelly();
+  renderWeekly();
+}
+
+function renderMap(day){
+  const g=document.getElementById('map-cells');if(!g)return;
+  g.innerHTML='';
+  for(let i=0;i<45;i++){
+    const x=24+i*(556/45);
+    const fill=i<day-1?'#3a6a2a':i===day-1?'#ffd700':'#1a2a1a';
+    const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    r.setAttribute('x',x);r.setAttribute('y',38);r.setAttribute('width',10);r.setAttribute('height',10);r.setAttribute('rx',2);r.setAttribute('fill',fill);
+    g.appendChild(r);
+    if(i===day-1){const glow=document.createElementNS('http://www.w3.org/2000/svg','ellipse');glow.setAttribute('cx',x+5);glow.setAttribute('cy',48);glow.setAttribute('rx',9);glow.setAttribute('ry',4);glow.setAttribute('fill','#ffd700');glow.setAttribute('opacity','0.25');g.appendChild(glow);}
+  }
+  const px2=24+(day-1)*(556/45)+5;
+  const pm=document.getElementById('player-marker');if(pm)pm.setAttribute('transform',`translate(${px2},0)`);
+}
+
+function renderSpell(){
+  const letters=TARGET.split(''),have=[...(S.letters||[])];
+  const all=letters.every(l=>{const i=have.indexOf(l);if(i!==-1){have.splice(i,1);return true;}return false;});
+  const have2=[...(S.letters||[])];
+  document.getElementById('spell-boxes').innerHTML=letters.map(l=>{
+    const i=have2.indexOf(l),filled=i!==-1;if(filled)have2.splice(i,1);
+    return `<div class="sbox ${all?'complete':filled?'filled':''}">${filled?l:''}</div>`;
+  }).join('');
+  const rem=TARGET.length-(S.letters||[]).length;
+  document.getElementById('spell-status').textContent=all?'🎉 恭喜集齊！Bonus 獎勵待公布':`已收集 ${(S.letters||[]).length} 個，還差 ${rem} 個`;
+}
+
+function renderJelly(){
+  const jc=S.jellyCount||0,cd=S.consecutiveDays||0;
+  document.getElementById('jelly-bar').style.width=Math.min(Math.round(cd/10*100),100)+'%';
+  document.getElementById('jelly-hint').textContent=`連續 ${cd} / 10 天（已兌換 ${jc}/5 次）`;
+  document.getElementById('jelly-slots').innerHTML=Array(5).fill(0).map((_,i)=>`<div class="jelly-slot ${i<jc?'earned':''}">${i<jc?'🍮':''}</div>`).join('');
+}
+
+function renderWeekly(){
+  const diet=Math.min(S.weeklyDiet||0,4);
+  const sport=Math.min(S.weeklySport||0,3);
+  document.getElementById('diet-slots').innerHTML=Array(4).fill(0).map((_,i)=>`<div class="w-slot ${i<diet?(i===3?'combo':'done'):''}">${i<diet?(i===3?'⚡':'✓'):''}</div>`).join('');
+  document.getElementById('sport-slots').innerHTML=Array(3).fill(0).map((_,i)=>`<div class="w-slot ${i<sport?(i===2?'combo':'done'):''}">${i<sport?(i===2?'🔥':'🏋️'):''}</div>`).join('');
+  document.getElementById('diet-bonus').className='w-bonus'+(diet>=4?' ':' dim');
+  document.getElementById('diet-bonus').textContent=diet>=4?'Combo！+2分':'第4次→Combo+2';
+  document.getElementById('sport-bonus').className='w-bonus'+(sport>=3?' ':' dim');
+  document.getElementById('sport-bonus').textContent=sport>=3?'爆擊！+3分':'第3次→爆擊+3';
+}
+
+// ── UPLOAD ──
+window.openUpload=function(task,pts){
+  currentUploadTask={task,pts};
+  document.getElementById('upload-title').textContent=`上傳：${task}`;
+  document.getElementById('upload-desc').textContent=`完成後獲得 +${pts} 分（待主辦人審核）`;
+  document.getElementById('upload-preview').style.display='none';
+  document.getElementById('file-input').value='';
+  selectedFile=null;
+  document.getElementById('upload-modal').style.display='flex';
+};
+
+window.closeUpload=function(){document.getElementById('upload-modal').style.display='none';};
+
+window.previewFile=function(e){
+  selectedFile=e.target.files[0];
+  if(!selectedFile)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{const img=document.getElementById('upload-preview');img.src=ev.target.result;img.style.display='block';};
+  reader.readAsDataURL(selectedFile);
+};
+
+window.submitCheckin=async function(){
+  if(!selectedFile){alert('請先選擇截圖！');return;}
+  const btn=document.getElementById('submit-btn');
+  btn.disabled=true;btn.textContent='上傳中...';
+  try{
+    const ext=selectedFile.name.split('.').pop();
+    const path=`checkins/${S.empId}/${currentUploadTask.task}/${Date.now()}.${ext}`;
+    const storageRef=ref(storage,path);
+    await uploadBytes(storageRef,selectedFile);
+    const url=await getDownloadURL(storageRef);
+    await addDoc(collection(db,'summer2026_checkins'),{
+      empId:S.empId, empName:S.empName, taskType:currentUploadTask.task,
+      pts:currentUploadTask.pts, fileUrl:url, status:'待審核',
+      createdAt:new Date()
+    });
+    closeUpload();
+    showToast('✅ 打卡成功！等待審核後積分更新');
+  }catch(e){alert('上傳失敗：'+e.message);}
+  finally{btn.disabled=false;btn.textContent='✅ 送出打卡';}
+};
+
+// ── RANKING ──
+window.loadRanking=async function(){
+  const wrap=document.getElementById('rank-wrap');
+  wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--dim);padding:10px">載入中…</div>';
+  try{
+    const snap=await getDocs(collection(db,'summer2026_employees'));
+    const items=snap.docs.map(d=>d.data()).filter(i=>i.group&&i.nickname).sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+    if(!items.length){wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--dim);padding:10px">尚無資料</div>';return;}
+    const nums=['rn-gold','rn-silver','rn-bronze'];
+    const myRank=items.findIndex(i=>i.empId===S.empId)+1;
+    wrap.innerHTML=items.slice(0,8).map((i,idx)=>{
+      const isMe=i.empId===S.empId;
+      return `<div class="rank-row${isMe?' me':''}">
+        <span class="rnum ${nums[idx]||'rn-norm'}">${idx+1}</span>
+        <span class="r-name" style="${isMe?'font-weight:700;color:var(--gold)':''}">${i.nickname||i.empId}${isMe?' 👈':''}</span>
+        <span style="font-size:10px;padding:1px 5px;border-radius:4px;${i.group==='fat'?'background:#2a1008;color:#ff6644':'background:#081828;color:#44aaff'}">${i.group==='fat'?'減脂':'增肌'}</span>
+        <span class="r-pts">${i.totalPts||0}</span>
+      </div>`;
+    }).join('')+(myRank>8?`<div style="text-align:center;font-size:11px;color:var(--hint);padding:6px">你目前第 ${myRank} 名</div>`:'');
+  }catch(e){wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--dim);padding:10px">載入失敗</div>';}
+};
+
+// ── PROFILE ──
+function renderProfile(){
+  const all=[...CHARS.fat,...CHARS.muscle];
+  const c=all.find(x=>x.id===S.charId)||CHARS.fat[0];
+  document.getElementById('p-empid').textContent=S.empId;
+  const gb=document.getElementById('p-group');
+  gb.textContent=S.group==='fat'?'⚡ 減脂組':'💪 增肌組';
+  gb.style.cssText=`background:${S.group==='fat'?'#2a1008':'#081828'};color:${S.group==='fat'?'#ff6644':'#44aaff'};padding:3px 10px;border-radius:6px`;
+  document.getElementById('p-pts').textContent=(S.totalPts||0)+' 分';
+  const pc=document.getElementById('p-canvas');if(pc)drawChar(pc.getContext('2d'),c.id,getDay());
+  document.getElementById('p-char-name').textContent=c.name;
+  document.getElementById('p-char-slogan').textContent=c.slogan;
+  document.getElementById('p-nick').placeholder='目前暱稱：'+(S.nickname||'未設定');
+  const isFat=S.group==='fat';
+  document.getElementById('inbody-update-form').innerHTML=`
+    <div class="form-group">
+      <label class="form-label">本週距離目標還差（${isFat?'%':'kg'}）</label>
+      <div class="unit-row">
+        <input class="game-input" type="number" id="week-gap" placeholder="例如：${S.currentGap||''}" step="0.1" value="${S.currentGap||''}"/>
+        <span class="unit-label">${isFat?'%':'kg'}</span>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--hint)">目標：${S.target||'未設定'}</div>
+  `;
+}
+
+window.saveNick=async function(){
+  const v=document.getElementById('p-nick').value.trim();
+  if(!v){alert('暱稱不能為空');return;}
+  S.nickname=v;
+  try{await updateDoc(doc(db,'summer2026_employees',S.empId),{nickname:v});showToast('暱稱已更新！');}
+  catch(e){alert('儲存失敗');}
+  document.getElementById('p-nick').value='';
+  document.getElementById('p-nick').placeholder='目前暱稱：'+v;
+};
+
+window.saveInbodyUpdate=async function(){
+  const gap=parseFloat(document.getElementById('week-gap')?.value);
+  if(isNaN(gap)){alert('請輸入數值');return;}
+  S.currentGap=gap;
+  try{
+    await updateDoc(doc(db,'summer2026_employees',S.empId),{currentGap:gap,lastInbodyUpdate:new Date()});
+    showToast('✅ 本週數據已更新！');
+  }catch(e){alert('儲存失敗');}
+};
+
+window.goChangeChar=function(){
+  S.changingChar=true;
+  document.getElementById('group-title').textContent='更換角色';
+  document.getElementById('group-sub').textContent='選好後點確認（組別不可更換）';
+  document.getElementById('group-tabs').style.display='none';
+  document.getElementById('lock-note').style.display='none';
+  renderCharGrid(S.group);
+  const btn=document.querySelector('#s-group .btn-primary');
+  if(btn){btn.textContent='確認更換';btn.onclick=confirmChangeChar;}
+  showScreen('s-group');
+};
+
+window.confirmChangeChar=async function(){
+  if(!S.charId){alert('請選擇角色');return;}
+  S.changingChar=false;
+  document.getElementById('group-title').textContent='選擇你的組別與角色';
+  document.getElementById('group-sub').textContent='組別選定後不能更換，角色之後隨時可改';
+  document.getElementById('group-tabs').style.display='grid';
+  document.getElementById('lock-note').style.display='block';
+  const btn=document.querySelector('#s-group .btn-primary');
+  if(btn){btn.textContent='下一步 →';btn.onclick=goToNick;}
+  try{await updateDoc(doc(db,'summer2026_employees',S.empId),{charId:S.charId});}catch(e){}
+  showTab('me');
+};
+
+// ── NAV ──
+window.showTab=function(tab){
+  if(tab==='map'){
+    showScreen('s-main');renderMain();
+    document.getElementById('nav-map').classList.add('active');
+    document.getElementById('nav-me').classList.remove('active');
+  }else{
+    showScreen('s-profile');renderProfile();
+    document.getElementById('nav-map').classList.remove('active');
+    document.getElementById('nav-me').classList.add('active');
+  }
+};
+
+window.showScreen=function(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+};
+
+window.doLogout=function(){
+  S={empId:'',empName:'',group:'',charId:'',nickname:'',totalPts:0,taskPts:0,letters:[],consecutiveDays:0,jellyCount:0,targetVal:0,currentGap:0,target:'',changingChar:false};
+  document.getElementById('emp-input').value='';
+  document.getElementById('login-err').textContent='';
+  showScreen('s-login');
+};
+
+document.getElementById('emp-input').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+</script>
+</body>
+</html>
