@@ -334,6 +334,23 @@ window.reviewCheckin = async function(status) {
   closeModal();
 };
 
+// 字母發放邏輯
+const TARGET_WORD = 'SHINYBRANDS';
+const PTS_PER_LETTER = 8;
+
+function getRandomLetter(currentLetters) {
+  const needed = {};
+  TARGET_WORD.split('').forEach(l => { needed[l] = (needed[l]||0) + 1; });
+  const have = {};
+  (currentLetters||[]).forEach(l => { have[l] = (have[l]||0) + 1; });
+  const remaining = TARGET_WORD.split('').filter((l,i,arr) => {
+    const need = arr.slice(0,i+1).filter(x=>x===l).length;
+    return (have[l]||0) < need;
+  });
+  if(remaining.length === 0) return null;
+  return remaining[Math.floor(Math.random() * remaining.length)];
+}
+
 window.quickReview = async function(id, status, empId, pts) {
   try {
     const ref = doc(db, 'summer2026_checkins', id);
@@ -344,10 +361,27 @@ window.quickReview = async function(id, status, empId, pts) {
       if(empSnap.exists()) {
         const data = empSnap.data();
         const delta = status === '通過' ? (pts||0) : -(pts||0);
-        await updateDoc(empRef, {
+        const oldPts = data.totalPts||0;
+        const newPts = oldPts + delta;
+        const updates = {
           taskPts: (data.taskPts||0) + delta,
-          totalPts: (data.totalPts||0) + delta
-        });
+          totalPts: newPts
+        };
+        // 審核通過時判斷是否跨越8的倍數 → 發字母
+        if(status === '通過' && delta > 0) {
+          const oldMilestone = Math.floor(oldPts / PTS_PER_LETTER);
+          const newMilestone = Math.floor(newPts / PTS_PER_LETTER);
+          if(newMilestone > oldMilestone) {
+            const count = newMilestone - oldMilestone;
+            const letters = [...(data.letters||[])];
+            for(let i=0; i<count; i++) {
+              const letter = getRandomLetter(letters);
+              if(letter) letters.push(letter);
+            }
+            updates.letters = letters;
+          }
+        }
+        await updateDoc(empRef, updates);
       }
     }
     loadCheckins();
