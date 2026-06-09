@@ -540,6 +540,8 @@ window.retroLetters = async function() {
     alert(`✅ 補發完成！共更新 ${count} 位員工的字母`);
   } catch(e) { alert('補發失敗：'+e.message); }
 };
+
+window.saveSettings = async function() {
   try {
     const fields = ['dietPts','exercisePts','exerciseBonus','exerciseBonusEvery','photoEssayPts','healthyDietPts',
       'ptsPerLetter','jellyConsecutiveDays','jellyMaxCount',
@@ -557,48 +559,44 @@ window.retroLetters = async function() {
 };
 
 // ── EVENT BINDINGS ──
-document.addEventListener('DOMContentLoaded', () => {
-  const $ = id => document.getElementById(id);
+const _$ = id => document.getElementById(id);
 
-  // Login
-  $('btn-admin-login').addEventListener('click', adminLogin);
-  $('admin-pw').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(); });
+// Login
+_$('btn-admin-login').addEventListener('click', adminLogin);
+_$('admin-pw').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(); });
 
-  // Nav
-  $('nav-dashboard').addEventListener('click', () => showPage('dashboard'));
-  $('nav-checkins').addEventListener('click', () => showPage('checkins'));
-  $('nav-members').addEventListener('click', () => showPage('members'));
-  $('nav-inbody').addEventListener('click', () => showPage('inbody'));
-  $('nav-ranking').addEventListener('click', () => showPage('ranking'));
-  $('nav-settings').addEventListener('click', () => showPage('settings'));
-  $('nav-logout').addEventListener('click', adminLogout);
+// Nav
+_$('nav-dashboard').addEventListener('click', () => showPage('dashboard'));
+_$('nav-checkins').addEventListener('click', () => showPage('checkins'));
+_$('nav-members').addEventListener('click', () => showPage('members'));
+_$('nav-inbody').addEventListener('click', () => showPage('inbody'));
+_$('nav-ranking').addEventListener('click', () => showPage('ranking'));
+_$('nav-settings').addEventListener('click', () => showPage('settings'));
+_$('nav-logout').addEventListener('click', adminLogout);
 
-  // Reload buttons
-  $('btn-reload-checkins').addEventListener('click', loadCheckins);
-  $('btn-reload-members').addEventListener('click', loadMembers);
-  $('btn-reload-inbody').addEventListener('click', loadInbody);
-  $('btn-calc-rank').addEventListener('click', calcRankPts);
-  $('btn-reload-ranking').addEventListener('click', loadRanking);
+// Reload buttons
+_$('btn-reload-checkins').addEventListener('click', loadCheckins);
+_$('btn-reload-members').addEventListener('click', loadMembers);
+_$('btn-reload-inbody').addEventListener('click', loadInbody);
+_$('btn-calc-rank').addEventListener('click', calcRankPts);
+_$('btn-reload-ranking').addEventListener('click', loadRanking);
 
-  // Settings
-  $('btn-save-settings').addEventListener('click', saveSettings);
-  $('btn-retro-letters').addEventListener('click', retroLetters);
+// Settings
+_$('btn-save-settings').addEventListener('click', saveSettings);
+_$('btn-retro-letters').addEventListener('click', retroLetters);
 
-  // Filter selects & search
-  ['filter-status','filter-task'].forEach(id => {
-    $(id).addEventListener('change', loadCheckins);
-  });
-  $('search-emp').addEventListener('input', loadCheckins);
-  $('member-filter-group').addEventListener('change', loadMembers);
-  $('search-member').addEventListener('input', loadMembers);
-  $('inbody-filter').addEventListener('change', loadInbody);
-  $('rank-filter').addEventListener('change', loadRanking);
+// Filter selects & search
+['filter-status','filter-task'].forEach(id => _$(id).addEventListener('change', loadCheckins));
+_$('search-emp').addEventListener('input', loadCheckins);
+_$('member-filter-group').addEventListener('change', loadMembers);
+_$('search-member').addEventListener('input', loadMembers);
+_$('inbody-filter').addEventListener('change', loadInbody);
+_$('rank-filter').addEventListener('change', loadRanking);
 
-  // Modal buttons
-  $('btn-approve').addEventListener('click', () => reviewCheckin('通過'));
-  $('btn-reject').addEventListener('click', () => reviewCheckin('駁回'));
-  $('btn-close-modal').addEventListener('click', closeModal);
-});
+// Modal buttons
+_$('btn-approve').addEventListener('click', () => reviewCheckin('通過'));
+_$('btn-reject').addEventListener('click', () => reviewCheckin('駁回'));
+_$('btn-close-modal').addEventListener('click', closeModal);
 </script>
 </body>
 </html>
