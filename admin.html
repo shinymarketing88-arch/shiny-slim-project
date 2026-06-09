@@ -185,9 +185,11 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <div class="settings-grid" id="settings-form">
           <div class="loading" style="grid-column:span 2">載入中...</div>
         </div>
-        <div style="margin-top:1rem">
+        <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-gold" onclick="saveSettings()">💾 儲存設定</button>
+          <button class="btn btn-primary" onclick="retroLetters()">🔤 補發所有員工字母</button>
         </div>
+        <div style="font-size:11px;color:#8888aa;margin-top:8px">補發字母：根據每位員工目前積分，計算應得字母數並補發（每8分一個）</div>
       </div>
     </div>
 
@@ -515,7 +517,29 @@ window.loadSettings = async function() {
   } catch(e) { console.error(e); }
 };
 
-window.saveSettings = async function() {
+window.retroLetters = async function() {
+  if(!confirm('確定要根據現有積分補發所有員工的字母嗎？\n（已有字母不會重複發）')) return;
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    let count = 0;
+    for(const d of snap.docs) {
+      const data = d.data();
+      const pts = data.totalPts || 0;
+      const shouldHave = Math.floor(pts / PTS_PER_LETTER);
+      const currentLetters = [...(data.letters||[])];
+      const toAdd = shouldHave - currentLetters.length;
+      if(toAdd > 0) {
+        for(let i=0; i<toAdd; i++) {
+          const letter = getRandomLetter(currentLetters);
+          if(letter) currentLetters.push(letter);
+        }
+        await updateDoc(doc(db,'summer2026_employees',d.id), { letters: currentLetters });
+        count++;
+      }
+    }
+    alert(`✅ 補發完成！共更新 ${count} 位員工的字母`);
+  } catch(e) { alert('補發失敗：'+e.message); }
+};
   try {
     const fields = ['dietPts','exercisePts','exerciseBonus','exerciseBonusEvery','photoEssayPts','healthyDietPts',
       'ptsPerLetter','jellyConsecutiveDays','jellyMaxCount',
