@@ -73,20 +73,20 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="login-sub">主辦人後台管理系統</div>
     <input type="password" id="admin-pw" placeholder="請輸入管理員密碼" />
     <div class="err" id="pw-err"></div>
-    <button class="btn btn-primary btn-full" onclick="adminLogin()">登入後台</button>
+    <button class="btn btn-primary btn-full" id="btn-admin-login">登入後台</button>
   </div>
 </div>
 
 <div class="admin-wrap" id="admin-wrap">
   <div class="sidebar">
     <div class="sidebar-logo">⚔ 後台管理</div>
-    <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">📊 總覽</div>
-    <div class="nav-item" onclick="showPage('checkins')" id="nav-checkins">📋 打卡審核</div>
-    <div class="nav-item" onclick="showPage('members')" id="nav-members">👥 成員管理</div>
-    <div class="nav-item" onclick="showPage('inbody')" id="nav-inbody">📐 InBody 數據</div>
-    <div class="nav-item" onclick="showPage('ranking')" id="nav-ranking">🏆 排行榜</div>
-    <div class="nav-item" onclick="showPage('settings')" id="nav-settings">⚙️ 活動設定</div>
-    <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" onclick="adminLogout()">🚪 登出</div>
+    <div class="nav-item active" id="nav-dashboard">📊 總覽</div>
+    <div class="nav-item" id="nav-checkins">📋 打卡審核</div>
+    <div class="nav-item" id="nav-members">👥 成員管理</div>
+    <div class="nav-item" id="nav-inbody">📐 InBody 數據</div>
+    <div class="nav-item" id="nav-ranking">🏆 排行榜</div>
+    <div class="nav-item" id="nav-settings">⚙️ 活動設定</div>
+    <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" id="nav-logout">🚪 登出</div>
   </div>
 
   <div class="content">
@@ -127,7 +127,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <option value="健康飲食">健康飲食</option>
         </select>
         <input type="text" class="search-box" id="search-emp" placeholder="搜尋員工編號/姓名" oninput="loadCheckins()"/>
-        <button class="btn btn-sm btn-primary" onclick="loadCheckins()">🔄 重新載入</button>
+        <button class="btn btn-sm btn-primary" id="btn-reload-checkins">🔄 重新載入</button>
       </div>
       <div id="checkins-table"><div class="loading">載入中...</div></div>
     </div>
@@ -143,7 +143,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <option value="">未選組</option>
         </select>
         <input type="text" class="search-box" id="search-member" placeholder="搜尋員工" oninput="loadMembers()"/>
-        <button class="btn btn-sm btn-primary" onclick="loadMembers()">🔄 重新載入</button>
+        <button class="btn btn-sm btn-primary" id="btn-reload-members">🔄 重新載入</button>
       </div>
       <div id="members-table"><div class="loading">載入中...</div></div>
     </div>
@@ -157,8 +157,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <option value="fat">減脂組</option>
           <option value="muscle">增肌組</option>
         </select>
-        <button class="btn btn-sm btn-primary" onclick="loadInbody()">🔄 重新載入</button>
-        <button class="btn btn-sm btn-gold" onclick="calcRankPts()">⚡ 計算名次積分</button>
+        <button class="btn btn-sm btn-primary" id="btn-reload-inbody">🔄 重新載入</button>
+        <button class="btn btn-sm btn-gold" id="btn-calc-rank">⚡ 計算名次積分</button>
       </div>
       <div id="inbody-table"><div class="loading">載入中...</div></div>
     </div>
@@ -172,7 +172,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <option value="fat">減脂組</option>
           <option value="muscle">增肌組</option>
         </select>
-        <button class="btn btn-sm btn-primary" onclick="loadRanking()">🔄 重新載入</button>
+        <button class="btn btn-sm btn-primary" id="btn-reload-ranking">🔄 重新載入</button>
       </div>
       <div id="ranking-table"><div class="loading">載入中...</div></div>
     </div>
@@ -186,8 +186,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <div class="loading" style="grid-column:span 2">載入中...</div>
         </div>
         <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-gold" onclick="saveSettings()">💾 儲存設定</button>
-          <button class="btn btn-primary" onclick="retroLetters()">🔤 補發所有員工字母</button>
+          <button class="btn btn-gold" id="btn-save-settings">💾 儲存設定</button>
+          <button class="btn btn-primary" id="btn-retro-letters">🔤 補發所有員工字母</button>
         </div>
         <div style="font-size:11px;color:#8888aa;margin-top:8px">補發字母：根據每位員工目前積分，計算應得字母數並補發（每8分一個）</div>
       </div>
@@ -203,9 +203,9 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <img class="modal-img" id="modal-img" src="" alt="打卡截圖"/>
     <div id="modal-info" style="font-size:13px;color:#8888aa;margin-bottom:1rem;line-height:1.8"></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-green" style="flex:1" onclick="reviewCheckin('通過')">✅ 通過</button>
-      <button class="btn btn-red" style="flex:1" onclick="reviewCheckin('駁回')">❌ 駁回</button>
-      <button class="btn btn-primary" onclick="closeModal()">取消</button>
+      <button class="btn btn-green" style="flex:1" id="btn-approve">✅ 通過</button>
+      <button class="btn btn-red" style="flex:1" id="btn-reject">❌ 駁回</button>
+      <button class="btn btn-primary" id="btn-close-modal">取消</button>
     </div>
   </div>
 </div>
@@ -555,6 +555,50 @@ window.retroLetters = async function() {
     alert('✅ 設定已儲存！');
   } catch(e) { alert('儲存失敗：'+e.message); }
 };
+
+// ── EVENT BINDINGS ──
+document.addEventListener('DOMContentLoaded', () => {
+  const $ = id => document.getElementById(id);
+
+  // Login
+  $('btn-admin-login').addEventListener('click', adminLogin);
+  $('admin-pw').addEventListener('keydown', e => { if(e.key==='Enter') adminLogin(); });
+
+  // Nav
+  $('nav-dashboard').addEventListener('click', () => showPage('dashboard'));
+  $('nav-checkins').addEventListener('click', () => showPage('checkins'));
+  $('nav-members').addEventListener('click', () => showPage('members'));
+  $('nav-inbody').addEventListener('click', () => showPage('inbody'));
+  $('nav-ranking').addEventListener('click', () => showPage('ranking'));
+  $('nav-settings').addEventListener('click', () => showPage('settings'));
+  $('nav-logout').addEventListener('click', adminLogout);
+
+  // Reload buttons
+  $('btn-reload-checkins').addEventListener('click', loadCheckins);
+  $('btn-reload-members').addEventListener('click', loadMembers);
+  $('btn-reload-inbody').addEventListener('click', loadInbody);
+  $('btn-calc-rank').addEventListener('click', calcRankPts);
+  $('btn-reload-ranking').addEventListener('click', loadRanking);
+
+  // Settings
+  $('btn-save-settings').addEventListener('click', saveSettings);
+  $('btn-retro-letters').addEventListener('click', retroLetters);
+
+  // Filter selects & search
+  ['filter-status','filter-task'].forEach(id => {
+    $(id).addEventListener('change', loadCheckins);
+  });
+  $('search-emp').addEventListener('input', loadCheckins);
+  $('member-filter-group').addEventListener('change', loadMembers);
+  $('search-member').addEventListener('input', loadMembers);
+  $('inbody-filter').addEventListener('change', loadInbody);
+  $('rank-filter').addEventListener('change', loadRanking);
+
+  // Modal buttons
+  $('btn-approve').addEventListener('click', () => reviewCheckin('通過'));
+  $('btn-reject').addEventListener('click', () => reviewCheckin('駁回'));
+  $('btn-close-modal').addEventListener('click', closeModal);
+});
 </script>
 </body>
 </html>
