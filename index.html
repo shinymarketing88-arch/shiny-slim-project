@@ -823,15 +823,17 @@ function renderSpell() {
 }
 
 function renderJelly() {
-  const jc = S.jellyCount||0;           // 系統累計可兌換次數
-  const jd = S.jellyDelivered||0;       // 實際已發放次數
+  const jc = S.jellyCount||0;
+  const jd = S.jellyDelivered||0;
   const cd = S.consecutiveDays||0;
   $('jelly-bar').style.width = Math.min(Math.round(cd/10*100),100) + '%';
-  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/5 次${jc>jd?'，待領取 '+(jc-jd)+' 次':''}）`;
-  $('jelly-slots').innerHTML = Array(5).fill(0).map((_,i) =>
-    `<div class="j-slot ${i<jd?'earned':i<jc?'earned' :''}" style="${i<jd?'':'i<jc?background:#fff3cd;border-color:#ffc107':''}">
-      ${i<jd?'🧡':i<jc?'⏳':''}</div>`
-  ).join('');
+  const pending = jc - jd;
+  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/5 次${pending>0?' · 待領取 '+pending+' 次':''}）`;
+  $('jelly-slots').innerHTML = Array(5).fill(0).map((_,i) => {
+    if(i < jd) return `<div class="j-slot earned">🧡</div>`;
+    if(i < jc) return `<div class="j-slot" style="background:#fff3cd;border-color:#ffc107">⏳</div>`;
+    return `<div class="j-slot"></div>`;
+  }).join('');
 }
 
 function renderWeekly() {
