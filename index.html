@@ -484,6 +484,18 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
         </div>
       </div>
       <button class="logout-btn" id="btn-logout">登出</button>
+
+      <!-- 測試模式（活動開始後可移除） -->
+      <div style="margin:12px;padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:12px">
+        <div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:8px">🧪 測試模式（活動開始後移除）</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="test-day-inp" type="number" min="1" max="45" placeholder="輸入天數 1-45"
+            style="flex:1;padding:8px;border:1px solid #ffc107;border-radius:8px;font-size:13px;background:#fffbeb"/>
+          <button id="btn-test-day" style="padding:8px 12px;background:#f59e0b;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">套用</button>
+          <button id="btn-test-reset" style="padding:8px 12px;background:#6b7280;border:none;border-radius:8px;color:#fff;font-size:12px;cursor:pointer">重置</button>
+        </div>
+        <div style="font-size:11px;color:#856404;margin-top:6px" id="test-day-status">目前：正常模式（Day <span id="test-current-day">1</span>）</div>
+      </div>
     </div>
 
   </div><!-- end scroll -->
@@ -578,7 +590,11 @@ let changingChar = false;
 const $ = id => document.getElementById(id);
 const allChars = () => [...CHARS.fat, ...CHARS.muscle];
 const getChar = id => allChars().find(c => c.id === id) || CHARS.fat[0];
-const getDay = () => Math.max(1, Math.min(Math.floor((new Date()-START)/86400000)+1, 45));
+const getDay = () => {
+  const testDay = localStorage.getItem('testDay');
+  if(testDay) return parseInt(testDay);
+  return Math.max(1, Math.min(Math.floor((new Date()-START)/86400000)+1, 45));
+};
 const getLevel = pts => {
   let lv = LEVELS[0];
   for(const l of LEVELS) if(pts >= l.min) lv = l;
@@ -1089,6 +1105,27 @@ document.addEventListener('DOMContentLoaded', () => {
     $('login-err').textContent = '';
     changingChar = false;
     showScreen('login');
+  });
+
+  $('btn-test-day').addEventListener('click', () => {
+    const v = parseInt($('test-day-inp').value);
+    if(v >= 1 && v <= 45) {
+      localStorage.setItem('testDay', v);
+      $('test-day-status').textContent = `🧪 測試模式：強制 Day ${v}`;
+      $('test-current-day').textContent = v;
+      renderMain();
+      toast(`已切換到 Day ${v}`);
+    } else {
+      toast('請輸入 1-45 之間的數字');
+    }
+  });
+
+  $('btn-test-reset').addEventListener('click', () => {
+    localStorage.removeItem('testDay');
+    $('test-day-status').textContent = `目前：正常模式（Day ${getDay()}）`;
+    $('test-current-day').textContent = getDay();
+    renderMain();
+    toast('已重置為正常模式');
   });
 
   // Init
