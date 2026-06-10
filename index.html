@@ -566,7 +566,7 @@ const LEVELS = [
 // ── STATE ──
 let S = {
   empId:'', empName:'', group:'fat', charId:'', nickname:'',
-  totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0,
+  totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
   targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0
 };
 let curScreen = 'login';
@@ -823,11 +823,14 @@ function renderSpell() {
 }
 
 function renderJelly() {
-  const jc = S.jellyCount||0, cd = S.consecutiveDays||0;
+  const jc = S.jellyCount||0;           // 系統累計可兌換次數
+  const jd = S.jellyDelivered||0;       // 實際已發放次數
+  const cd = S.consecutiveDays||0;
   $('jelly-bar').style.width = Math.min(Math.round(cd/10*100),100) + '%';
-  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jc}/5 次）`;
+  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/5 次${jc>jd?'，待領取 '+(jc-jd)+' 次':''}）`;
   $('jelly-slots').innerHTML = Array(5).fill(0).map((_,i) =>
-    `<div class="j-slot ${i<jc?'earned':''}">${i<jc?'🧡':''}</div>`
+    `<div class="j-slot ${i<jd?'earned':i<jc?'earned' :''}" style="${i<jd?'':'i<jc?background:#fff3cd;border-color:#ffc107':''}">
+      ${i<jd?'🧡':i<jc?'⏳':''}</div>`
   ).join('');
 }
 
@@ -1079,7 +1082,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-change-char').addEventListener('click', goChangeChar);
 
   $('btn-logout').addEventListener('click', () => {
-    S = { empId:'', empName:'', group:'fat', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0 };
+    S = { empId:'', empName:'', group:'fat', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0, targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0 };
     $('emp-inp').value = '';
     $('login-err').textContent = '';
     changingChar = false;

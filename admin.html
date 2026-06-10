@@ -85,6 +85,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="nav-item" id="nav-members">👥 成員管理</div>
     <div class="nav-item" id="nav-inbody">📐 InBody 數據</div>
     <div class="nav-item" id="nav-ranking">🏆 排行榜</div>
+    <div class="nav-item" id="nav-jelly">🧡 馬甲果凍發放</div>
     <div class="nav-item" id="nav-settings">⚙️ 活動設定</div>
     <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" id="nav-logout">🚪 登出</div>
   </div>
@@ -193,6 +194,27 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       </div>
     </div>
 
+    <!-- 馬甲果凍發放 -->
+    <div class="page" id="page-jelly">
+      <div class="page-title">🧡 馬甲果凍發放管理</div>
+      <div class="card" style="margin-bottom:1rem;background:#1a2a1a;border-color:#3a6a3a">
+        <div style="font-size:13px;color:#66cc66;line-height:1.7">
+          <b>發放規則：</b>連續10天完成登入＋飲食打卡審核通過，系統自動累計次數。<br>
+          主辦人確認後點「標記已發放」，員工遊戲畫面的果凍圖示即時更新。<br>
+          每位員工最多可兌換 5 次。
+        </div>
+      </div>
+      <div class="filter-row">
+        <select id="jelly-filter">
+          <option value="pending">待發放</option>
+          <option value="all">全部記錄</option>
+          <option value="done">已發放</option>
+        </select>
+        <button class="btn btn-sm btn-primary" id="btn-reload-jelly">🔄 重新載入</button>
+      </div>
+      <div id="jelly-table"><div class="loading">載入中...</div></div>
+    </div>
+
   </div>
 </div>
 
@@ -257,6 +279,7 @@ window.showPage = function(page) {
   if(page==='inbody') loadInbody();
   if(page==='ranking') loadRanking();
   if(page==='settings') loadSettings();
+  if(page==='jelly') loadJelly();
 };
 
 async function loadDashboard() {
@@ -593,6 +616,70 @@ window.retroLetters = async function() {
   } catch(e) { alert('補發失敗：'+e.message); }
 };
 
+window.loadJelly = async function() {
+  const filter = document.getElementById('jelly-filter').value;
+  const wrap = document.getElementById('jelly-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db, 'summer2026_employees'));
+    let items = snap.docs.map(d => ({id:d.id, ...d.data()}))
+      .filter(i => i.group && (i.jellyCount||0) > 0);
+
+    // 展開成每次兌換一筆
+    const rows = [];
+    items.forEach(emp => {
+      const total = emp.jellyCount || 0;
+      const delivered = emp.jellyDelivered || 0;
+      for(let i=1; i<=total; i++) {
+        rows.push({
+          empId: emp.empId,
+          name: emp.name,
+          nickname: emp.nickname||'—',
+          round: i,
+          delivered: i <= delivered,
+          group: emp.group
+        });
+      }
+    });
+
+    const filtered = filter === 'pending' ? rows.filter(r=>!r.delivered)
+      : filter === 'done' ? rows.filter(r=>r.delivered)
+      : rows;
+
+    if(!filtered.length) {
+      wrap.innerHTML = '<div class="loading">無資料</div>';
+      return;
+    }
+
+    wrap.innerHTML = `<table>
+      <tr><th>員工</th><th>暱稱</th><th>組別</th><th>第幾次</th><th>狀態</th><th>操作</th></tr>
+      ${filtered.map(r => `<tr>
+        <td>${r.name}<br><span style="font-size:10px;color:#8888aa">${r.empId}</span></td>
+        <td>${r.nickname}</td>
+        <td><span class="badge ${r.group==='fat'?'badge-fat':'badge-muscle'}">${r.group==='fat'?'減脂':'增肌'}</span></td>
+        <td>第 ${r.round} 次</td>
+        <td><span class="badge ${r.delivered?'badge-approved':'badge-pending'}">${r.delivered?'已發放':'待發放'}</span></td>
+        <td>${!r.delivered ? `<button class="btn btn-sm btn-green" onclick="deliverJelly('${r.empId}',${r.round})">✅ 標記已發放</button>` : '—'}</td>
+      </tr>`).join('')}
+    </table>`;
+  } catch(e) {
+    wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗：'+e.message+'</div>';
+  }
+};
+
+window.deliverJelly = async function(empId, round) {
+  if(!confirm(`確定標記 ${empId} 第 ${round} 次馬甲果凍為已發放？`)) return;
+  try {
+    const empRef = doc(db, 'summer2026_employees', empId);
+    const snap = await getDoc(empRef);
+    if(!snap.exists()) return;
+    const current = snap.data().jellyDelivered || 0;
+    await updateDoc(empRef, { jellyDelivered: Math.max(current, round) });
+    alert('✅ 已標記發放！');
+    loadJelly();
+  } catch(e) { alert('操作失敗：'+e.message); }
+};
+
 window.saveSettings = async function() {
   try {
     const fields = ['dietPts','exercisePts','exerciseBonus','exerciseBonusEvery','photoEssayPts','healthyDietPts',
@@ -623,6 +710,7 @@ _$('nav-checkins').addEventListener('click', () => showPage('checkins'));
 _$('nav-members').addEventListener('click', () => showPage('members'));
 _$('nav-inbody').addEventListener('click', () => showPage('inbody'));
 _$('nav-ranking').addEventListener('click', () => showPage('ranking'));
+_$('nav-jelly').addEventListener('click', () => showPage('jelly'));
 _$('nav-settings').addEventListener('click', () => showPage('settings'));
 _$('nav-logout').addEventListener('click', adminLogout);
 
@@ -632,6 +720,8 @@ _$('btn-reload-members').addEventListener('click', loadMembers);
 _$('btn-reload-inbody').addEventListener('click', loadInbody);
 _$('btn-calc-rank').addEventListener('click', calcRankPts);
 _$('btn-reload-ranking').addEventListener('click', loadRanking);
+_$('btn-reload-jelly').addEventListener('click', loadJelly);
+_$('jelly-filter').addEventListener('change', loadJelly);
 
 // Settings
 _$('btn-save-settings').addEventListener('click', saveSettings);
