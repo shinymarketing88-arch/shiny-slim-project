@@ -308,8 +308,8 @@ window.loadCheckins = async function() {
           <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
           <td style="display:flex;gap:4px">
             ${i.status==='待審核'?`
-              <button class="btn btn-sm btn-green" onclick="quickReview('${i.id}','通過','${i.empId}',${i.pts||0})">✅</button>
-              <button class="btn btn-sm btn-red" onclick="quickReview('${i.id}','駁回','${i.empId}',${i.pts||0})">❌</button>
+              <button class="btn btn-sm btn-green" onclick="quickReview('${i.id}','通過','${i.empId}',${i.pts||0},'${i.taskType||''}')">✅</button>
+              <button class="btn btn-sm btn-red" onclick="quickReview('${i.id}','駁回','${i.empId}',${i.pts||0},'${i.taskType||''}')">❌</button>
             `:'—'}
           </td>
         </tr>
@@ -353,41 +353,93 @@ function getRandomLetter(currentLetters) {
   return remaining[Math.floor(Math.random() * remaining.length)];
 }
 
-window.quickReview = async function(id, status, empId, pts) {
+window.quickReview = async function(id, status, empId, pts, taskType) {
   try {
     const ref = doc(db, 'summer2026_checkins', id);
     await updateDoc(ref, { status, reviewedAt: new Date() });
-    if(empId) {
-      const empRef = doc(db, 'summer2026_employees', empId);
-      const empSnap = await getDoc(empRef);
-      if(empSnap.exists()) {
-        const data = empSnap.data();
-        const delta = status === '通過' ? (pts||0) : -(pts||0);
-        const oldPts = data.totalPts||0;
-        const newPts = oldPts + delta;
-        const updates = {
-          taskPts: (data.taskPts||0) + delta,
-          totalPts: newPts
-        };
-        // 審核通過時判斷是否跨越8的倍數 → 發字母
-        if(status === '通過' && delta > 0) {
-          const oldMilestone = Math.floor(oldPts / PTS_PER_LETTER);
-          const newMilestone = Math.floor(newPts / PTS_PER_LETTER);
-          if(newMilestone > oldMilestone) {
-            const count = newMilestone - oldMilestone;
-            const letters = [...(data.letters||[])];
-            for(let i=0; i<count; i++) {
-              const letter = getRandomLetter(letters);
-              if(letter) letters.push(letter);
-            }
-            updates.letters = letters;
+
+    if(!empId) { loadCheckins(); return; }
+
+    const empRef = doc(db, 'summer2026_employees', empId);
+    const empSnap = await getDoc(empRef);
+    if(!empSnap.exists()) { loadCheckins(); return; }
+
+    const data = empSnap.data();
+    const updates = {};
+
+    if(status === '通過') {
+      // ── 1. 計算基本積分 ──
+      let earnedPts = pts || 0;
+
+      // ── 2. 運動打卡：每3次爆擊+3 ──
+      if(taskType === '運動打卡') {
+        const newSportCount = (data.weeklySport||0) + 1;
+        updates.weeklySport = newSportCount;
+        if(newSportCount % 3 === 0) {
+          earnedPts += 3; // 爆擊額外+3
+        }
+      }
+
+      // ── 3. 飲食打卡：每4次Combo+2 ──
+      if(taskType === '飲食打卡') {
+        const newDietCount = (data.weeklyDiet||0) + 1;
+        updates.weeklyDiet = newDietCount;
+        if(newDietCount % 4 === 0) {
+          earnedPts += 2; // Combo額外+2
+        }
+        // 連續打卡天數
+        const today = new Date().toDateString();
+        const lastDate = data.lastDietDate || '';
+        const yesterday = new Date(Date.now()-86400000).toDateString();
+        let newConsecutive = data.consecutiveDays || 0;
+        if(lastDate === yesterday) {
+          newConsecutive += 1;
+        } else if(lastDate !== today) {
+          newConsecutive = 1;
+        }
+        updates.consecutiveDays = newConsecutive;
+        updates.lastDietDate = today;
+
+        // ── 4. 馬甲果凍：連續10天兌換 ──
+        if(newConsecutive > 0 && newConsecutive % 10 === 0) {
+          const newJellyCount = (data.jellyCount||0) + 1;
+          if(newJellyCount <= 5) {
+            updates.jellyCount = newJellyCount;
           }
         }
-        await updateDoc(empRef, updates);
       }
+
+      // ── 5. 積分更新 ──
+      const oldPts = data.totalPts || 0;
+      const newPts = oldPts + earnedPts;
+      updates.taskPts = (data.taskPts||0) + earnedPts;
+      updates.totalPts = newPts;
+
+      // ── 6. 拼字字母：每滿8分發一個 ──
+      const oldMilestone = Math.floor(oldPts / PTS_PER_LETTER);
+      const newMilestone = Math.floor(newPts / PTS_PER_LETTER);
+      if(newMilestone > oldMilestone) {
+        const letters = [...(data.letters||[])];
+        for(let i=0; i<(newMilestone-oldMilestone); i++) {
+          const letter = getRandomLetter(letters);
+          if(letter) letters.push(letter);
+        }
+        updates.letters = letters;
+      }
+
+    } else if(status === '駁回') {
+      // 駁回：扣回積分
+      const earnedPts = pts || 0;
+      updates.taskPts = Math.max(0, (data.taskPts||0) - earnedPts);
+      updates.totalPts = Math.max(0, (data.totalPts||0) - earnedPts);
     }
+
+    await updateDoc(empRef, updates);
     loadCheckins();
-  } catch(e) { alert('操作失敗：'+e.message); }
+  } catch(e) {
+    alert('操作失敗：' + e.message);
+    console.error(e);
+  }
 };
 
 window.loadMembers = async function() {

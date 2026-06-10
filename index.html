@@ -303,6 +303,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
         <div class="hud-pts">
           <div class="hud-pts-n" id="hud-pts">0</div>
           <div class="hud-pts-l">積分</div>
+          <div style="margin-top:4px"><button id="btn-refresh" style="font-size:9px;padding:2px 6px;border:1px solid rgba(255,255,255,.4);border-radius:6px;background:transparent;color:rgba(255,255,255,.8);cursor:pointer">↻ 更新</button></div>
         </div>
       </div>
 
@@ -629,6 +630,7 @@ async function doLogin() {
     // 根據資料完整度決定進入哪個畫面
     if(S.group && S.charId && S.nickname) {
       showScreen('main');
+      await loadTodayStatus();
       renderMain();
     } else {
       showScreen('group');
@@ -733,7 +735,34 @@ async function saveUser() {
   } catch(e) { console.error('saveUser:', e); }
 }
 
-// ── MAIN RENDER ──
+// ── 讀取今日打卡狀態 ──
+async function loadTodayStatus() {
+  try {
+    // 重新讀取最新員工資料（積分、字母等）
+    const snap = await getDoc(doc(db,'summer2026_employees',S.empId));
+    if(snap.exists()) Object.assign(S, snap.data());
+
+    // 讀取今日打卡紀錄
+    const today = new Date().toDateString();
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const todayCheckins = checkSnap.docs
+      .map(d => d.data())
+      .filter(d => d.empId === S.empId && new Date(d.createdAt?.seconds*1000).toDateString() === today);
+
+    const taskMap = {'飲食打卡':'qbtn-diet','健康飲食':'qbtn-health','運動打卡':'qbtn-sport','照片心得':'qbtn-photo'};
+    Object.entries(taskMap).forEach(([task, btnId]) => {
+      const match = todayCheckins.find(c => c.taskType === task);
+      if(!match) return;
+      const btn = $(btnId);
+      if(!btn) return;
+      if(match.status === '通過') {
+        btn.className = 'q-btn done'; btn.textContent = '✅ 完成';
+      } else if(match.status === '待審核') {
+        btn.className = 'q-btn pending'; btn.textContent = '⏳ 審核中';
+      }
+    });
+  } catch(e) { console.error('loadTodayStatus:', e); }
+}
 function renderMain() {
   const day = getDay();
   const c = getChar(S.charId);
@@ -1003,6 +1032,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Ranking
   $('btn-rank-reload').addEventListener('click', loadRanking);
+
+  // Refresh
+  $('btn-refresh').addEventListener('click', async () => {
+    await loadTodayStatus();
+    renderMain();
+    toast('✅ 已更新最新資料');
+  });
 
   // Upload modal
   $('upload-zone').addEventListener('click', () => $('file-inp').click());
