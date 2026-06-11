@@ -394,8 +394,11 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
       // ── 1. 計算基本積分 ──
       let earnedPts = pts || 0;
 
-      // ── 2. 運動打卡：每3次爆擊+3 ──
+      // ── 2. 運動打卡：每天1次計分，每3次爆擊+3；超過不加分 ──
       if(taskType === '運動打卡') {
+        const totalSport = (data.totalSport||0) + 1;
+        updates.totalSport = totalSport;
+        // 每天只計1次（totalSport計算總次數，weeklySport計算本週）
         const newSportCount = (data.weeklySport||0) + 1;
         updates.weeklySport = newSportCount;
         if(newSportCount % 3 === 0) {
@@ -403,7 +406,7 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
         }
       }
 
-      // ── 3. 飲食打卡：每4次Combo+2 ──
+      // ── 3. 飲食打卡：每4次Combo+2；連續打卡計算 ──
       if(taskType === '飲食打卡') {
         const newDietCount = (data.weeklyDiet||0) + 1;
         updates.weeklyDiet = newDietCount;
@@ -429,6 +432,15 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
           if(newJellyCount <= 5) {
             updates.jellyCount = newJellyCount;
           }
+        }
+      }
+
+      // ── 均衡滿分：每週超過4次後可傳但不加分 ──
+      if(taskType === '健康飲食') {
+        const weeklyHealth = (data.weeklyHealth||0) + 1;
+        updates.weeklyHealth = weeklyHealth;
+        if(weeklyHealth > 4) {
+          earnedPts = 0; // 超過4次不加分
         }
       }
 

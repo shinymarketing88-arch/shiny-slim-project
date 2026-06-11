@@ -357,7 +357,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#f0fdf4">🥗</div>
           <div class="q-body">
             <div class="q-title">【今日熱量】飲食打卡</div>
-            <div class="q-desc">上傳 WonderFood-AI 日統計截圖　+1分</div>
+            <div class="q-desc">上傳 WonderFood-AI 日統計截圖　+1分／每天1次</div>
           </div>
           <button class="q-btn todo" id="qbtn-diet">▶ 上傳</button>
         </div>
@@ -365,7 +365,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#fef9c3">🏅</div>
           <div class="q-body">
             <div class="q-title">【均衡滿分】健康達標</div>
-            <div class="q-desc">每週4次達80%營養成分　+2分</div>
+            <div class="q-desc">每週最多4次計分　+2分／每天1次</div>
           </div>
           <button class="q-btn todo" id="qbtn-health">▶ 上傳</button>
         </div>
@@ -373,15 +373,19 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#eff6ff">🏋️</div>
           <div class="q-body">
             <div class="q-title">【汗水閃耀】運動打卡</div>
-            <div class="q-desc">+1分（每3次爆擊+3分）</div>
+            <div class="q-desc">+1分，每3次爆擊+3分／每天1次</div>
           </div>
           <button class="q-btn todo" id="qbtn-sport">▶ 上傳</button>
         </div>
+      </div>
+
+      <div class="sec-hd">活動任務</div>
+      <div class="quest-list">
         <div class="quest-item">
           <div class="q-icon" style="background:#fff7ed">📸</div>
           <div class="q-body">
             <div class="q-title">【變身日記】照片＋心得</div>
-            <div class="q-desc">3張照片＋100字心得　+5分</div>
+            <div class="q-desc">3張照片＋100字心得　+5分／整個活動僅1次</div>
           </div>
           <button class="q-btn todo" id="qbtn-photo">▶ 上傳</button>
         </div>
@@ -761,22 +765,36 @@ async function loadTodayStatus() {
     // 讀取今日打卡紀錄
     const today = new Date().toDateString();
     const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
-    const todayCheckins = checkSnap.docs
-      .map(d => d.data())
-      .filter(d => d.empId === S.empId && new Date(d.createdAt?.seconds*1000).toDateString() === today);
+    const allMyCheckins = checkSnap.docs.map(d => d.data()).filter(d => d.empId === S.empId);
+    const todayStr = today;
 
-    const taskMap = {'飲食打卡':'qbtn-diet','健康飲食':'qbtn-health','運動打卡':'qbtn-sport','照片心得':'qbtn-photo'};
-    Object.entries(taskMap).forEach(([task, btnId]) => {
-      const match = todayCheckins.find(c => c.taskType === task);
-      if(!match) return;
+    // 每日任務：當天已上傳就鎖定（不管審核狀態）
+    const dailyMap = {'飲食打卡':'qbtn-diet','健康飲食':'qbtn-health','運動打卡':'qbtn-sport'};
+    Object.entries(dailyMap).forEach(([task, btnId]) => {
+      const todayMatch = allMyCheckins.find(c =>
+        c.taskType === task &&
+        new Date(c.createdAt?.seconds*1000).toDateString() === todayStr
+      );
       const btn = $(btnId);
       if(!btn) return;
-      if(match.status === '通過') {
-        btn.className = 'q-btn done'; btn.textContent = '✅ 完成';
-      } else if(match.status === '待審核') {
-        btn.className = 'q-btn pending'; btn.textContent = '⏳ 審核中';
+      if(!todayMatch) return;
+      if(todayMatch.status === '通過') {
+        btn.className = 'q-btn done'; btn.textContent = '✅ 完成'; btn.disabled = true;
+      } else {
+        btn.className = 'q-btn pending'; btn.textContent = '⏳ 審核中'; btn.disabled = true;
       }
     });
+
+    // 變身日記：整個活動只能上傳1次，上傳後永久鎖定
+    const photoMatch = allMyCheckins.find(c => c.taskType === '照片心得');
+    const photoBtn = $('qbtn-photo');
+    if(photoMatch && photoBtn) {
+      if(photoMatch.status === '通過') {
+        photoBtn.className = 'q-btn done'; photoBtn.textContent = '✅ 已完成'; photoBtn.disabled = true;
+      } else {
+        photoBtn.className = 'q-btn pending'; photoBtn.textContent = '⏳ 審核中'; photoBtn.disabled = true;
+      }
+    }
   } catch(e) { console.error('loadTodayStatus:', e); }
 }
 function renderMain() {
