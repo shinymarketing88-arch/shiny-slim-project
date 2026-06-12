@@ -160,22 +160,21 @@ window.initSettings = async function() {
       ptsPerLetter: 8,
       // 馬甲果凍
       jellyConsecutiveDays: 10,
-      jellyMaxCount: 5,
+      jellyMaxCount: 4,
       // 達標級距分（增肌）
       muscleT1Kg: 0.2, muscleT1Pts: 10,
-      muscleT2Kg: 0.6, muscleT2Pts: 20,
-      muscleT3Kg: 1.0, muscleT3Pts: 30,
+      muscleT2Kg: 0.6, muscleT2Pts: 25,
+      muscleT3Kg: 1.0, muscleT3Pts: 35,
       // 達標級距分（減脂）
       fatT1Pct: 1.5, fatT1Pts: 10,
-      fatT2Pct: 3.0, fatT2Pts: 20,
-      fatT3Pct: 4.5, fatT3Pts: 30,
+      fatT2Pct: 2.5, fatT2Pts: 25,
+      fatT3Pct: 3.5, fatT3Pts: 35,
       // 名次分
-      rank1Pts: 30, rank2Pts: 20, rank3Pts: 10,
-      // 完賽條件
-      completionPhotoCount: 3,
-      completionEssayMinWords: 100,
-      completionFatMinPct: 1.5,
-      completionMuscleMinKg: 0.2,
+      rank1Pts: 55, rank2Pts: 50, rank3Pts: 45,
+      // 完賽門檻
+      completionMinPts: 60,
+      // 活動低標
+      activityMinPts: 45,
       updatedAt: new Date()
     });
     setStatus('✅ 系統設定初始化完成', 'done');

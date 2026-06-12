@@ -357,7 +357,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#f0fdf4">🥗</div>
           <div class="q-body">
             <div class="q-title">【今日熱量】飲食打卡</div>
-            <div class="q-desc">上傳 WonderFood-AI 日統計截圖　+1分／每天1次</div>
+            <div class="q-desc">上傳 WonderFood-AI 日統計截圖　每天+1分</div>
           </div>
           <button class="q-btn todo" id="qbtn-diet">▶ 上傳</button>
         </div>
@@ -365,7 +365,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#fef9c3">🏅</div>
           <div class="q-body">
             <div class="q-title">【均衡滿分】健康達標</div>
-            <div class="q-desc">每週最多4次計分　+2分／每天1次</div>
+            <div class="q-desc">週達4次+4分，第5-7次各+2分，最高10分</div>
           </div>
           <button class="q-btn todo" id="qbtn-health">▶ 上傳</button>
         </div>
@@ -373,7 +373,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-icon" style="background:#eff6ff">🏋️</div>
           <div class="q-body">
             <div class="q-title">【汗水閃耀】運動打卡</div>
-            <div class="q-desc">+1分，每3次爆擊+3分／每天1次</div>
+            <div class="q-desc">週積分：第1次+1、第2次+2、第3次+3、第4-5次+1、第6次+3</div>
           </div>
           <button class="q-btn todo" id="qbtn-sport">▶ 上傳</button>
         </div>
@@ -410,7 +410,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
         <div style="font-size:28px;flex-shrink:0">🧡</div>
         <div style="flex:1">
           <div style="font-size:12px;font-weight:700;color:var(--purple-dark);margin-bottom:2px">【m2美度】超能馬甲果凍</div>
-          <div style="font-size:10px;color:var(--purple-mid)">連續10天登入＋飲食打卡 → 兌換一次（最多5次）</div>
+          <div style="font-size:10px;color:var(--purple-mid)">連續10天登入＋飲食打卡 → 兌換一次（最多4次）</div>
           <div class="jelly-pb"><div class="jelly-pf" id="jelly-bar" style="width:0%"></div></div>
           <div style="font-size:10px;color:var(--text-light);margin-top:3px" id="jelly-hint">連續 0/10 天</div>
           <div class="jelly-slots" id="jelly-slots"></div>
@@ -422,7 +422,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
         <div class="reward-card">
           <div class="r-icon">🗝️</div>
           <div class="r-title">完賽禮</div>
-          <div class="r-cond">3張照片＋心得＋達低標</div>
+          <div class="r-cond">變身日記＋總積分達60分</div>
           <div class="r-pb"><div class="r-pf" id="pb-c" style="background:var(--gold);width:0%"></div></div>
           <div class="r-val" id="pv-c">未達成</div>
         </div>
@@ -862,8 +862,8 @@ function renderJelly() {
   const cd = S.consecutiveDays||0;
   $('jelly-bar').style.width = Math.min(Math.round(cd/10*100),100) + '%';
   const pending = jc - jd;
-  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/5 次${pending>0?' · 待領取 '+pending+' 次':''}）`;
-  $('jelly-slots').innerHTML = Array(5).fill(0).map((_,i) => {
+  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/4 次${pending>0?' · 待領取 '+pending+' 次':''}）`;
+  $('jelly-slots').innerHTML = Array(4).fill(0).map((_,i) => {
     if(i < jd) return `<div class="j-slot earned">🧡</div>`;
     if(i < jc) return `<div class="j-slot" style="background:#fff3cd;border-color:#ffc107">⏳</div>`;
     return `<div class="j-slot"></div>`;
@@ -871,18 +871,36 @@ function renderJelly() {
 }
 
 function renderWeekly() {
-  const d = Math.min(S.weeklyDiet||0, 4);
-  const sp = Math.min(S.weeklySport||0, 3);
-  $('diet-slots').innerHTML = Array(4).fill(0).map((_,i) =>
-    `<div class="w-slot ${i<d?(i===3?'combo':'done'):''}">${i<d?(i===3?'⚡':'✓'):''}</div>`
-  ).join('');
-  $('sport-slots').innerHTML = Array(3).fill(0).map((_,i) =>
-    `<div class="w-slot ${i<sp?(i===2?'combo':'done'):''}">${i<sp?(i===2?'🔥':'🏋️'):''}</div>`
-  ).join('');
-  $('diet-bonus').className = 'w-bonus' + (d>=4?'':' dim');
-  $('diet-bonus').textContent = d>=4 ? 'Combo！+2分' : '第4次→+2';
-  $('sport-bonus').className = 'w-bonus' + (sp>=3?'':' dim');
-  $('sport-bonus').textContent = sp>=3 ? '爆擊！+3分' : '第3次→+3';
+  const d = Math.min(S.weeklyHealth||0, 7);
+  const sp = Math.min(S.weeklySport||0, 7);
+  const sportPtsMap = [1,2,3,1,1,3,0];
+  const sportEmoji = ['1️⃣','2️⃣','3️⃣','💥','5️⃣','💥','😴'];
+
+  // 均衡滿分：4格，前3格=待解鎖，第4格=滿分，超過顯示+2
+  $('diet-slots').innerHTML = Array(4).fill(0).map((_,i) => {
+    if(i < Math.min(d,3)) return `<div class="w-slot done">✓</div>`;
+    if(i === 3 && d >= 4) return `<div class="w-slot combo">🏅</div>`;
+    return `<div class="w-slot"></div>`;
+  }).join('') + (d > 4 ? `<div style="font-size:10px;color:var(--orange);font-weight:700;margin-left:4px">+${(d-4)*2}分</div>` : '');
+
+  // 運動：7格，每格顯示該次積分
+  $('sport-slots').innerHTML = Array(7).fill(0).map((_,i) => {
+    if(i < sp) {
+      const pts = sportPtsMap[i];
+      const cls = pts === 3 ? 'combo' : pts === 0 ? '' : 'done';
+      return `<div class="w-slot ${cls}" style="font-size:11px;font-weight:700">${pts === 0 ? '😴' : '+'+pts}</div>`;
+    }
+    return `<div class="w-slot" style="font-size:10px;color:var(--text-light)">${sportPtsMap[i]===0?'':'+'+(sportPtsMap[i]||'')}</div>`;
+  }).join('');
+
+  // 狀態提示
+  const dietMsg = d === 0 ? '達4次解鎖+4分' : d < 4 ? `還差 ${4-d} 次解鎖` : d < 7 ? `已達標！第${d+1}次+2分` : '本週已達最高分！';
+  const sportMsg = sp >= 7 ? '本週已達最高積分！休息也是訓練的一部分 💪' : `本週第${sp+1}次 +${sportPtsMap[Math.min(sp,6)]}分`;
+
+  $('diet-bonus').className = 'w-bonus' + (d >= 4 ? '' : ' dim');
+  $('diet-bonus').textContent = dietMsg;
+  $('sport-bonus').className = 'w-bonus' + (sp >= 7 ? '' : ' dim');
+  $('sport-bonus').textContent = sportMsg;
 }
 
 // ── UPLOAD ──
