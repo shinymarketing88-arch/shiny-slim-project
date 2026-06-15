@@ -391,6 +391,28 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
     const updates = {};
 
     if(status === '通過') {
+      // ── 0. 自動週重置：每週一 00:00 起算，跨週自動歸零 ──
+      // 計算「活動開始後第幾週」（週一為起點）
+      const activityStart = new Date('2026-07-06'); // 週一
+      const now = new Date();
+      const daysSinceStart = Math.floor((now - activityStart) / 86400000);
+      const currentWeek = Math.floor(daysSinceStart / 7);
+      const lastWeek = data.lastWeek ?? -1;
+      const isNewWeek = currentWeek > lastWeek;
+
+      if(isNewWeek) {
+        updates.weeklyDiet   = 0;
+        updates.weeklySport  = 0;
+        updates.weeklyHealth = 0;
+        updates.lastWeek     = currentWeek;
+        // 歸零後從 0 重新計算（下面各任務的 data.weeklyXxx 仍是舊值，用 0 覆蓋）
+        data.weeklyDiet   = 0;
+        data.weeklySport  = 0;
+        data.weeklyHealth = 0;
+      } else {
+        updates.lastWeek = currentWeek;
+      }
+
       // ── 1. 計算基本積分 ──
       let earnedPts = pts || 0;
 
@@ -542,7 +564,7 @@ window.calcRankPts = async function() {
     const sett = settSnap.data();
     const fatItems = items.filter(i => i.group==='fat' && i.targetVal > 0).sort((a,b) => (a.currentGap||a.targetVal) - (b.currentGap||b.targetVal));
     const muscleItems = items.filter(i => i.group==='muscle' && i.targetVal > 0).sort((a,b) => (a.currentGap||a.targetVal) - (b.currentGap||b.targetVal));
-    const rankPtsMap = [sett.rank1Pts||55, sett.rank2Pts||50, sett.rank3Pts||45];
+    const rankPtsMap = [sett.rank1Pts||40, sett.rank2Pts||35, sett.rank3Pts||30];
     const updates = [];
     [fatItems, muscleItems].forEach(group => {
       group.slice(0,3).forEach((emp, idx) => {
