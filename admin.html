@@ -336,7 +336,7 @@ async function loadDashboard() {
     const fatAvg = fatCount > 0 ? Math.round(emps.filter(e=>e.group==='fat').reduce((s,e)=>s+(e.totalPts||0),0)/fatCount) : 0;
     const muscleAvg = muscleCount > 0 ? Math.round(emps.filter(e=>e.group==='muscle').reduce((s,e)=>s+(e.totalPts||0),0)/muscleCount) : 0;
     document.getElementById('stat-registered').textContent = registered;
-    const start = new Date('2026-07-06');
+    const start = new Date(settingsData.startDate || '2026-07-13');
     const day = Math.max(1, Math.min(Math.floor((new Date()-start)/86400000)+1, 45));
     document.getElementById('stat-day').textContent = 'Day ' + day;
     const checkSnap = await getDocs(query(collection(db,'summer2026_checkins'), where('status','==','待審核')));
@@ -436,13 +436,13 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
 
     if(status === '通過') {
       // ── 0. 自動週重置：每週一 00:00 起算，跨週自動歸零 ──
-      // 計算「活動開始後第幾週」（週一為起點）
-      const activityStart = new Date('2026-07-06'); // 週一
+      const activityStart = new Date(settingsData.startDate || '2026-07-13');
       const now = new Date();
       const daysSinceStart = Math.floor((now - activityStart) / 86400000);
-      const currentWeek = Math.floor(daysSinceStart / 7);
+      // 活動開始前不做週重置
+      const currentWeek = daysSinceStart >= 0 ? Math.floor(daysSinceStart / 7) : 0;
       const lastWeek = data.lastWeek ?? -1;
-      const isNewWeek = currentWeek > lastWeek;
+      const isNewWeek = daysSinceStart >= 0 && currentWeek > lastWeek;
 
       if(isNewWeek) {
         updates.weeklyDiet   = 0;
@@ -460,12 +460,11 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
       // ── 1. 計算基本積分 ──
       let earnedPts = pts || 0;
 
-      // ── 2. 運動打卡：階梯積分，第7次不給分 ──
-      // 週次積分表：第1次+1、第2次+2、第3次+3、第4次+1、第5次+1、第6次+3、第7次+0
+      // ── 2. 運動打卡：1/1/3/1/1/3/0 ──
       if(taskType === '運動打卡') {
         const newSportCount = (data.weeklySport||0) + 1;
         updates.weeklySport = newSportCount;
-        const sportPtsMap = [1, 2, 3, 1, 1, 3, 0]; // index 0=第1次
+        const sportPtsMap = [1,1,3,1,1,3,0];
         const idx = Math.min(newSportCount - 1, 6);
         earnedPts = sportPtsMap[idx];
       }
@@ -654,9 +653,14 @@ window.loadSettings = async function() {
   try {
     const snap = await getDoc(doc(db, 'summer2026_settings', 'main'));
     settingsData = snap.data() || {};
+    const dateHtml = `
+      <div class="form-row" style="grid-column:span 2;background:#1a2a1a;border-radius:8px;padding:10px;margin-bottom:4px">
+        <label class="form-label" style="color:#66cc66">📅 活動開始日期（週重置依此計算）</label>
+        <input class="form-input" type="date" id="sett-startDate" value="${settingsData.startDate||'2026-07-13'}" style="margin-top:6px"/>
+      </div>
+    `;
     const fields = [
-      ['dietPts','飲食打卡積分'],['exercisePts','運動打卡積分'],['exerciseBonus','運動爆擊積分'],
-      ['exerciseBonusEvery','每幾次爆擊'],['photoEssayPts','照片心得積分'],['healthyDietPts','健康飲食積分'],
+      ['dietPts','飲食打卡積分'],['photoEssayPts','照片心得積分'],
       ['ptsPerLetter','每幾分得字母'],['jellyConsecutiveDays','馬甲凍連續天數'],['jellyMaxCount','馬甲凍最多次數'],
       ['muscleT1Kg','增肌低標(kg)'],['muscleT1Pts','增肌低標積分'],
       ['muscleT2Kg','增肌中標(kg)'],['muscleT2Pts','增肌中標積分'],
@@ -665,8 +669,9 @@ window.loadSettings = async function() {
       ['fatT2Pct','減脂中標(%)'],['fatT2Pts','減脂中標積分'],
       ['fatT3Pct','減脂高標(%)'],['fatT3Pts','減脂高標積分'],
       ['rank1Pts','第一名積分'],['rank2Pts','第二名積分'],['rank3Pts','第三名積分'],
+      ['completionMinPts','完賽門檻積分'],['activityMinPts','活動低標積分'],
     ];
-    document.getElementById('settings-form').innerHTML = fields.map(([key,label]) => `
+    document.getElementById('settings-form').innerHTML = dateHtml + fields.map(([key,label]) => `
       <div class="form-row">
         <label class="form-label">${label}</label>
         <input class="form-input" type="number" id="sett-${key}" value="${settingsData[key]??''}"/>
@@ -821,10 +826,10 @@ window.saveMakeup = async function() {
   if(!date) { alert('請選擇補登日期'); return; }
 
   try {
-    // 寫入補登打卡紀錄
-    await addDoc(collection(db,'summer2026_checkins'), {
+    // 1. 寫入補登打卡紀錄
+    const docRef = await addDoc(collection(db,'summer2026_checkins'), {
       empId, empName, taskType,
-      pts: taskType==='飲食打卡'?1:taskType==='運動打卡'?1:2,
+      pts: taskType==='飲食打卡' ? 1 : taskType==='運動打卡' ? 1 : 2,
       status: '補登通過',
       isMakeup: true,
       makeupDate: date,
@@ -832,28 +837,39 @@ window.saveMakeup = async function() {
       createdAt: new Date()
     });
 
-    // 同步更新員工積分（使用現有 quickReview 邏輯）
-    await quickReview('__makeup__', '通過', empId,
-      taskType==='飲食打卡'?1:taskType==='運動打卡'?1:2, taskType);
+    // 2. 用真實的 checkin ID 呼叫 quickReview
+    await quickReview(docRef.id, '通過', empId,
+      taskType==='飲食打卡' ? 1 : taskType==='運動打卡' ? 1 : 2,
+      taskType);
 
     alert('✅ 補登成功！積分已自動計算更新');
     document.getElementById('makeup-modal').style.display='none';
     loadMembers();
-  } catch(e) { alert('補登失敗：'+e.message); }
+  } catch(e) {
+    alert('補登失敗：' + e.message);
+    console.error(e);
+  }
 };
 
 window.saveSettings = async function() {
   try {
-    const fields = ['dietPts','exercisePts','exerciseBonus','exerciseBonusEvery','photoEssayPts','healthyDietPts',
+    const numFields = ['dietPts','photoEssayPts',
       'ptsPerLetter','jellyConsecutiveDays','jellyMaxCount',
       'muscleT1Kg','muscleT1Pts','muscleT2Kg','muscleT2Pts','muscleT3Kg','muscleT3Pts',
       'fatT1Pct','fatT1Pts','fatT2Pct','fatT2Pts','fatT3Pct','fatT3Pts',
-      'rank1Pts','rank2Pts','rank3Pts'];
+      'rank1Pts','rank2Pts','rank3Pts',
+      'completionMinPts','activityMinPts'];
     const updates = { updatedAt: new Date() };
-    fields.forEach(k => {
+    numFields.forEach(k => {
       const el = document.getElementById('sett-'+k);
       if(el) updates[k] = parseFloat(el.value)||0;
     });
+    // 日期欄位單獨處理
+    const dateEl = document.getElementById('sett-startDate');
+    if(dateEl && dateEl.value) {
+      updates.startDate = dateEl.value;
+      settingsData.startDate = dateEl.value; // 即時更新記憶體
+    }
     await updateDoc(doc(db, 'summer2026_settings', 'main'), updates);
     alert('✅ 設定已儲存！');
   } catch(e) { alert('儲存失敗：'+e.message); }
