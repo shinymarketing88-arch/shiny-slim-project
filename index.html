@@ -150,7 +150,10 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 .r-pf{height:4px;border-radius:2px;transition:width .5s}
 .r-val{font-size:10px;color:var(--text-light);margin-top:5px}
 
-/* ── RANK ── */
+/* ── RANK FILTER ── */
+.rank-filter-btn{padding:6px 14px;border-radius:20px;border:1.5px solid var(--purple-border);background:var(--white);color:var(--text-mid);font-size:12px;font-weight:700;cursor:pointer;font-family:'Noto Sans TC',sans-serif;transition:all .15s}
+.rank-filter-btn.active{background:var(--purple);border-color:var(--purple);color:var(--white)}
+.rank-filter-btn:active{transform:scale(.95)}
 .rank-card{background:var(--white);border:1px solid var(--purple-border);border-radius:14px;padding:12px;margin:0 12px;box-shadow:0 1px 3px rgba(108,99,255,.06)}
 .rank-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--purple-border)}
 .rank-row:last-child{border-bottom:none}
@@ -450,6 +453,11 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
       </div>
 
       <div class="sec-hd">即時戰報 <button class="sec-btn" id="btn-rank-reload">↻ 更新</button></div>
+      <div style="display:flex;gap:6px;padding:0 12px;margin-bottom:8px">
+        <button class="rank-filter-btn active" id="rank-filter-all" data-filter="">🏆 綜合</button>
+        <button class="rank-filter-btn" id="rank-filter-fat" data-filter="fat">⚡ 減脂組</button>
+        <button class="rank-filter-btn" id="rank-filter-muscle" data-filter="muscle">💪 增肌組</button>
+      </div>
       <div class="rank-card" id="rank-wrap">
         <div style="text-align:center;font-size:12px;color:var(--text-light);padding:10px">點「更新」載入排行榜</div>
       </div>
@@ -557,7 +565,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, getDocs, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 
 const FB_CFG = {
@@ -667,6 +675,7 @@ async function doLogin() {
       showScreen('main');
       await loadTodayStatus();
       renderMain();
+      startRealtimeListener();
     } else {
       showScreen('group');
       renderCharGrid(S.group || 'fat');
@@ -752,6 +761,7 @@ async function completeSetup() {
   await saveUser();
   showScreen('main');
   renderMain();
+  startRealtimeListener();
 }
 
 async function skipInbody() {
@@ -770,49 +780,75 @@ async function saveUser() {
   } catch(e) { console.error('saveUser:', e); }
 }
 
-// ── 讀取今日打卡狀態 ──
-async function loadTodayStatus() {
-  try {
-    // 重新讀取最新員工資料（積分、字母等）
-    const snap = await getDoc(doc(db,'summer2026_employees',S.empId));
-    if(snap.exists()) Object.assign(S, snap.data());
+// ── 即時監聽員工資料 ──
+let unsubscribeListener = null;
 
-    // 讀取今日打卡紀錄
+function startRealtimeListener() {
+  // 先取消舊的監聽
+  if(unsubscribeListener) unsubscribeListener();
+  unsubscribeListener = onSnapshot(
+    doc(db, 'summer2026_employees', S.empId),
+    (snap) => {
+      if(!snap.exists()) return;
+      const newData = snap.data();
+      const oldPts = S.totalPts || 0;
+      Object.assign(S, newData);
+      // 有變化才更新畫面
+      if(S.totalPts !== oldPts || true) {
+        renderMain();
+        updateQuestButtons();
+      }
+    },
+    (err) => console.error('監聽錯誤:', err)
+  );
+}
+
+// 更新任務按鈕狀態（不重新讀取 Firebase，用現有資料）
+async function updateQuestButtons() {
+  try {
     const today = new Date().toDateString();
     const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
-    const allMyCheckins = checkSnap.docs.map(d => d.data()).filter(d => d.empId === S.empId);
-    const todayStr = today;
+    const allMyCheckins = checkSnap.docs.map(d=>d.data()).filter(d=>d.empId===S.empId);
 
-    // 每日任務：當天已上傳就鎖定（不管審核狀態）
     const dailyMap = {'飲食打卡':'qbtn-diet','健康飲食':'qbtn-health','運動打卡':'qbtn-sport'};
     Object.entries(dailyMap).forEach(([task, btnId]) => {
-      const todayMatch = allMyCheckins.find(c =>
+      const todayMatches = allMyCheckins.filter(c =>
         c.taskType === task &&
-        new Date(c.createdAt?.seconds*1000).toDateString() === todayStr
+        new Date(c.createdAt?.seconds*1000).toDateString() === today
       );
       const btn = $(btnId);
-      if(!btn) return;
-      if(!todayMatch) return;
-      if(todayMatch.status === '通過') {
-        btn.className = 'q-btn done'; btn.textContent = '✅ 完成'; btn.disabled = true;
+      if(!btn || !todayMatches.length) return;
+      const approved = todayMatches.find(c => c.status === '通過');
+      const pending = todayMatches.find(c => c.status === '待審核');
+      if(approved) {
+        btn.className='q-btn done'; btn.textContent='✅ 完成'; btn.disabled=true;
+      } else if(pending) {
+        btn.className='q-btn pending'; btn.textContent='⏳ 審核中'; btn.disabled=true;
       } else {
-        btn.className = 'q-btn pending'; btn.textContent = '⏳ 審核中'; btn.disabled = true;
+        btn.className='q-btn todo'; btn.textContent='▶ 上傳'; btn.disabled=false;
       }
     });
 
-    // 變身日記：整個活動只能上傳1次，上傳後永久鎖定
-    const photoMatch = allMyCheckins.find(c => c.taskType === '照片心得');
+    const photoApproved = allMyCheckins.find(c=>c.taskType==='照片心得'&&c.status==='通過');
+    const photoPending = allMyCheckins.find(c=>c.taskType==='照片心得'&&c.status==='待審核');
     const photoBtn = $('qbtn-photo');
-    if(photoMatch && photoBtn) {
-      if(photoMatch.status === '通過') {
-        photoBtn.className = 'q-btn done'; photoBtn.textContent = '✅ 已完成'; photoBtn.disabled = true;
-        // 顯示進階挑戰
-        const advEl = $('advanced-challenge');
-        if(advEl) advEl.style.display = 'block';
+    if(photoBtn) {
+      if(photoApproved) {
+        photoBtn.className='q-btn done'; photoBtn.textContent='✅ 已完成'; photoBtn.disabled=true;
+        const advEl=$('advanced-challenge'); if(advEl) advEl.style.display='block';
+      } else if(photoPending) {
+        photoBtn.className='q-btn pending'; photoBtn.textContent='⏳ 審核中'; photoBtn.disabled=true;
       } else {
-        photoBtn.className = 'q-btn pending'; photoBtn.textContent = '⏳ 審核中'; photoBtn.disabled = true;
+        photoBtn.className='q-btn todo'; photoBtn.textContent='▶ 上傳'; photoBtn.disabled=false;
       }
     }
+  } catch(e) { console.error('updateQuestButtons:', e); }
+}
+async function loadTodayStatus() {
+  try {
+    const snap = await getDoc(doc(db,'summer2026_employees',S.empId));
+    if(snap.exists()) Object.assign(S, snap.data());
+    await updateQuestButtons();
   } catch(e) { console.error('loadTodayStatus:', e); }
 }
 function renderMain() {
@@ -1016,30 +1052,37 @@ async function submitUpload() {
 }
 
 // ── RANKING ──
-async function loadRanking() {
+let currentRankFilter = '';
+
+async function loadRanking(group) {
+  if(group !== undefined) currentRankFilter = group;
+  // 更新篩選按鈕狀態
+  ['all','fat','muscle'].forEach(f => {
+    const btn = $('rank-filter-'+f);
+    if(btn) btn.classList.toggle('active', (f==='all'?'':f) === currentRankFilter);
+  });
   const wrap = $('rank-wrap');
   wrap.innerHTML = '<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">載入中…</div>';
   try {
     const snap = await getDocs(collection(db,'summer2026_employees'));
-    const items = snap.docs.map(d=>d.data()).filter(i=>i.group&&i.nickname).sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
-    if(!items.length) { wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚無資料</div>'; return; }
-    const rnCls = ['g','s','b'];
-    const myRank = items.findIndex(i=>i.empId===S.empId)+1;
-    wrap.innerHTML = items.slice(0,8).map((i,idx) => {
-      const isMe = i.empId===S.empId;
-      const tagStyle = i.group==='fat'
-        ? 'background:#fff7ed;color:#c2410c'
-        : 'background:#eff6ff;color:#1d4ed8';
+    let items = snap.docs.map(d=>d.data()).filter(i=>i.group&&i.nickname);
+    if(currentRankFilter) items = items.filter(i=>i.group===currentRankFilter);
+    items.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+    if(!items.length){wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚無資料</div>';return;}
+    const rnCls=['g','s','b'];
+    const myRank=items.findIndex(i=>i.empId===S.empId)+1;
+    wrap.innerHTML=items.slice(0,8).map((i,idx)=>{
+      const isMe=i.empId===S.empId;
+      const tagStyle=i.group==='fat'?'background:#fff7ed;color:#c2410c':'background:#eff6ff;color:#1d4ed8';
       return `<div class="rank-row${isMe?' me':''}">
         <span class="rn ${rnCls[idx]||'n'}">${idx+1}</span>
         <span class="r-name" style="${isMe?'font-weight:700;color:var(--purple)':''}">${i.nickname||i.empId}${isMe?' 👈':''}</span>
         <span class="r-tag" style="${tagStyle}">${i.group==='fat'?'減脂':'增肌'}</span>
         <span class="r-pts">${i.totalPts||0}分</span>
       </div>`;
-    }).join('') + (myRank>8 ? `<div style="text-align:center;font-size:11px;color:var(--text-light);padding:6px">你目前第 ${myRank} 名</div>` : '');
-  } catch(e) {
+    }).join('')+(myRank>8?`<div style="text-align:center;font-size:11px;color:var(--text-light);padding:6px">你目前第 ${myRank} 名</div>`:'');
+  } catch(e){
     wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">載入失敗，請重試</div>';
-    console.error(e);
   }
 }
 
@@ -1133,7 +1176,6 @@ document.addEventListener('DOMContentLoaded', () => {
     $('nav-me').classList.remove('active');
   });
   $('nav-rank').addEventListener('click', () => {
-    // 直接在主畫面捲到排行榜並更新
     showScreen('main'); renderMain();
     $('nav-rank').classList.add('active');
     $('nav-map').classList.remove('active');
@@ -1157,7 +1199,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('qbtn-photo').addEventListener('click',  () => openUpload('照片心得', 5));
 
   // Ranking
-  $('btn-rank-reload').addEventListener('click', loadRanking);
+  $('btn-rank-reload').addEventListener('click', () => loadRanking());
+  $('rank-filter-all').addEventListener('click', () => loadRanking(''));
+  $('rank-filter-fat').addEventListener('click', () => loadRanking('fat'));
+  $('rank-filter-muscle').addEventListener('click', () => loadRanking('muscle'));
 
   // Refresh
   $('btn-refresh').addEventListener('click', async () => {
@@ -1205,6 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-change-char').addEventListener('click', goChangeChar);
 
   $('btn-logout').addEventListener('click', () => {
+    if(unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
     S = { empId:'', empName:'', group:'fat', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0, targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0 };
     $('emp-inp').value = '';
     $('login-err').textContent = '';
