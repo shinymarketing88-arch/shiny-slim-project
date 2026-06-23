@@ -88,6 +88,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="nav-item" id="nav-jelly">🧡 馬甲果凍發放</div>
     <div class="nav-item" id="nav-completion">🎁 完賽禮名單</div>
     <div class="nav-item" id="nav-spell">🎉 拼字獎勵名單</div>
+    <div class="nav-item" id="nav-teams">👥 隊伍管理</div>
     <div class="nav-item" id="nav-settings">⚙️ 活動設定</div>
     <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" id="nav-logout">🚪 登出</div>
   </div>
@@ -224,6 +225,15 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <div id="spell-table"><div class="loading">載入中...</div></div>
     </div>
 
+    <!-- 隊伍管理 -->
+    <div class="page" id="page-teams">
+      <div class="page-title">👥 隊伍管理</div>
+      <div class="filter-row">
+        <button class="btn btn-sm btn-primary" id="btn-reload-teams">🔄 重新載入</button>
+      </div>
+      <div id="teams-table"><div class="loading">載入中...</div></div>
+    </div>
+
     <!-- 活動設定 -->
     <div class="page" id="page-settings">
       <div class="page-title">⚙️ 活動設定</div>
@@ -311,6 +321,28 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     </div>
   </div>
 </div>
+<!-- 只改組別 Modal -->
+<div class="modal" id="change-group-modal">
+  <div class="modal-inner" style="max-width:360px">
+    <h3 style="color:#ffd700;margin-bottom:4px">🔄 更改組別</h3>
+    <div style="font-size:12px;color:#8888aa;margin-bottom:1rem" id="change-group-emp-name">—</div>
+    <div style="font-size:11px;color:#ff9944;background:#2a1a00;border-radius:6px;padding:8px 10px;margin-bottom:1rem">
+      ⚠️ 更改組別後，員工的 InBody 目標設定會被清除，需重新填寫。積分保留。
+    </div>
+    <input type="hidden" id="change-group-empid"/>
+    <div class="form-row">
+      <label class="form-label">選擇新組別</label>
+      <select class="form-input" id="change-group-select">
+        <option value="fat">⚡ 減脂組</option>
+        <option value="muscle">💪 增肌組</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn btn-gold" style="flex:1" id="btn-save-group">✅ 確認更改</button>
+      <button class="btn btn-primary" id="btn-close-change-group">取消</button>
+    </div>
+  </div>
+</div>
 <div class="modal" id="review-modal">
   <div class="modal-inner">
     <h3 style="color:#ffd700;margin-bottom:1rem" id="modal-title">審核打卡</h3>
@@ -374,6 +406,7 @@ window.showPage = function(page) {
   if(page==='jelly') loadJelly();
   if(page==='completion') loadCompletion();
   if(page==='spell') loadSpell();
+  if(page==='teams') loadTeams();
 };
 
 async function loadDashboard() {
@@ -618,6 +651,7 @@ window.loadMembers = async function() {
         <td>${i.jellyCount||0}/4</td>
         <td style="display:flex;gap:4px">
           <button class="btn btn-sm btn-gold" onclick="openEditModal('${i.empId}')">✏️ 編輯</button>
+          <button class="btn btn-sm btn-primary" onclick="openChangeGroupModal('${i.empId}','${i.name}','${i.group||''}')">🔄 改組別</button>
           <button class="btn btn-sm btn-green" onclick="openMakeupModal('${i.empId}','${i.name}')">📋 補登</button>
         </td>
       </tr>`).join('')}
@@ -885,6 +919,103 @@ function downloadCSV(rows, filename) {
   a.click();
 }
 
+window.loadTeams = async function() {
+  const wrap = document.getElementById('teams-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db,'summer2026_teams'));
+    const teams = snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>!t.disbanded&&t.members?.length>0);
+    if(!teams.length){wrap.innerHTML='<div class="loading">尚無隊伍</div>';return;}
+
+    // 讀取員工資料
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const empMap = {};
+    empSnap.docs.forEach(d=>{ empMap[d.id]=d.data(); });
+
+    wrap.innerHTML = teams.map(t=>{
+      const members = (t.members||[]).map(id=>empMap[id]).filter(Boolean);
+      const avgPts = members.length ? Math.round(members.reduce((s,m)=>s+(m.totalPts||0),0)/members.length) : 0;
+      return `
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div>
+              <span style="font-size:14px;font-weight:700;color:#ffd700">🏴 ${t.teamName}</span>
+              <span style="font-size:11px;color:#8888aa;margin-left:8px">邀請碼：${t.inviteCode}</span>
+            </div>
+            <div style="display:flex;gap:4px">
+              <button class="btn btn-sm btn-primary" onclick="renameTeam('${t.id}','${t.teamName}')">✏️ 改名</button>
+              <button class="btn btn-sm btn-red" onclick="disbandTeam('${t.id}','${t.teamName}')">🗑️ 解散</button>
+            </div>
+          </div>
+          <table style="width:100%">
+            <tr><th>員工</th><th>暱稱</th><th>組別</th><th>積分</th><th>操作</th></tr>
+            ${members.map(m=>`<tr>
+              <td>${m.name}<br><span style="font-size:10px;color:#8888aa">${m.empId}</span></td>
+              <td>${m.nickname||'—'}</td>
+              <td><span class="badge ${m.group==='fat'?'badge-fat':'badge-muscle'}">${m.group==='fat'?'減脂':'增肌'}</span></td>
+              <td style="color:#ffd700;font-weight:700">${m.totalPts||0}</td>
+              <td><button class="btn btn-sm btn-red" onclick="removeMember('${t.id}','${m.empId}')">移除</button></td>
+            </tr>`).join('')}
+          </table>
+          <div style="font-size:12px;color:#aaaaff;margin-top:8px;text-align:right">平均積分：${avgPts} 分　隊長：${empMap[t.leaderId]?.nickname||t.leaderId}</div>
+        </div>`;
+    }).join('');
+  } catch(e){wrap.innerHTML='<div class="loading" style="color:#ff6666">載入失敗</div>';}
+};
+
+window.renameTeam = async function(teamId, oldName) {
+  const newName = prompt(`重新命名隊伍（目前：${oldName}）`, oldName);
+  if(!newName || newName.trim()===oldName) return;
+  try {
+    await updateDoc(doc(db,'summer2026_teams',teamId), {teamName: newName.trim()});
+    alert('✅ 隊伍名稱已更新');
+    loadTeams();
+  } catch(e){alert('更新失敗：'+e.message);}
+};
+
+window.disbandTeam = async function(teamId, teamName) {
+  if(!confirm(`確定要解散「${teamName}」嗎？`)) return;
+  try {
+    await updateDoc(doc(db,'summer2026_teams',teamId), {disbanded:true, members:[]});
+    alert('✅ 隊伍已解散');
+    loadTeams();
+  } catch(e){alert('解散失敗：'+e.message);}
+};
+
+window.removeMember = async function(teamId, empId) {
+  if(!confirm(`確定要將 ${empId} 從隊伍中移除嗎？`)) return;
+  try {
+    const snap = await getDoc(doc(db,'summer2026_teams',teamId));
+    if(!snap.exists()) return;
+    const newMembers = snap.data().members.filter(id=>id!==empId);
+    await updateDoc(doc(db,'summer2026_teams',teamId), {members:newMembers});
+    alert('✅ 已移除');
+    loadTeams();
+  } catch(e){alert('移除失敗：'+e.message);}
+};
+
+window.openChangeGroupModal = function(empId, name, currentGroup) {
+  document.getElementById('change-group-empid').value = empId;
+  document.getElementById('change-group-emp-name').textContent = `員工：${name}（${empId}）　目前組別：${currentGroup==='fat'?'⚡ 減脂組':'💪 增肌組'}`;
+  document.getElementById('change-group-select').value = currentGroup||'fat';
+  document.getElementById('change-group-modal').style.display = 'flex';
+};
+
+window.saveGroupChange = async function() {
+  const empId = document.getElementById('change-group-empid').value;
+  const newGroup = document.getElementById('change-group-select').value;
+  try {
+    await updateDoc(doc(db,'summer2026_employees',empId), {
+      group: newGroup,
+      // 清除目標設定，讓員工重新填寫
+      target:'', targetVal:0, currentGap:0,
+    });
+    alert(`✅ 已更改為${newGroup==='fat'?'減脂':'增肌'}組！員工下次登入需重新填寫 InBody 目標。`);
+    document.getElementById('change-group-modal').style.display='none';
+    loadMembers();
+  } catch(e){alert('更改失敗：'+e.message);}
+};
+
 window.loadJelly = async function() {
   const filter = document.getElementById('jelly-filter').value;
   const wrap = document.getElementById('jelly-table');
@@ -955,6 +1086,14 @@ window.openEditModal = async function(empId) {
     const d = snap.data();
     document.getElementById('edit-form').innerHTML = `
       <input type="hidden" id="edit-empid" value="${empId}"/>
+      <div class="form-row">
+        <label class="form-label">組別</label>
+        <select class="form-input" id="edit-group">
+          <option value="" ${!d.group?'selected':''}>未選</option>
+          <option value="fat" ${d.group==='fat'?'selected':''}>⚡ 減脂組</option>
+          <option value="muscle" ${d.group==='muscle'?'selected':''}>💪 增肌組</option>
+        </select>
+      </div>
       ${[
         ['totalPts','總積分'],['taskPts','任務積分'],['inbodyPts','體態積分'],
         ['consecutiveDays','連續打卡天數'],['weeklyDiet','本週飲食次數'],
@@ -985,6 +1124,9 @@ window.saveEdit = async function() {
   const empId = document.getElementById('edit-empid').value;
   const fields = ['totalPts','taskPts','inbodyPts','consecutiveDays','weeklyDiet','weeklySport','weeklyHealth','jellyCount'];
   const updates = { updatedByAdmin: true, adminEditAt: new Date() };
+  // 組別
+  const groupEl = document.getElementById('edit-group');
+  if(groupEl) updates.group = groupEl.value;
   fields.forEach(k => {
     const el = document.getElementById('edit-'+k);
     if(el) updates[k] = parseInt(el.value)||0;
@@ -1035,49 +1177,46 @@ window.saveMakeup = async function() {
 window.resetOne = async function() {
   const empId = document.getElementById('edit-empid')?.value;
   if(!empId) return;
-  if(!confirm(`確定要重置 ${empId} 的所有積分和打卡紀錄嗎？\n（組別、角色、暱稱會保留）`)) return;
+  if(!confirm(`確定要完整重置 ${empId} 的所有資料嗎？\n（積分、打卡、組別、角色、暱稱全部清掉）`)) return;
   try {
     const empRef = doc(db,'summer2026_employees',empId);
-    const snap = await getDoc(empRef);
-    if(!snap.exists()) return;
-    const d = snap.data();
     await updateDoc(empRef, {
+      group:'', charId:'', nickname:'', target:'', targetVal:0, currentGap:0,
       totalPts:0, taskPts:0, inbodyPts:0, rankPts:0,
       letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
       weeklyDiet:0, weeklySport:0, weeklyHealth:0, lastWeek:-1,
       lastDietDate:'', completionReward:'', spellReward:'',
-      completionDelivered:false, spellDelivered:false,
+      completionDelivered:false, spellDelivered:false, registeredAt:null,
     });
-    // 刪除該員工的打卡紀錄
     const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
     const toDelete = checkSnap.docs.filter(d=>d.data().empId===empId);
     for(const d of toDelete) await updateDoc(d.ref, {status:'已重置'});
-    alert(`✅ ${empId} 積分已重置！`);
+    alert(`✅ ${empId} 已完整重置！`);
     document.getElementById('edit-modal').style.display='none';
     loadMembers();
   } catch(e) { alert('重置失敗：'+e.message); }
 };
 
 window.resetAll = async function() {
-  if(!confirm('⚠️ 確定要重置所有員工的積分和打卡紀錄嗎？\n此操作無法復原！')) return;
-  if(!confirm('再次確認：清除全部測試資料？')) return;
+  if(!confirm('⚠️ 確定要重置所有員工的完整資料嗎？\n（積分、打卡、組別、角色、暱稱全部清掉）\n此操作無法復原！')) return;
+  if(!confirm('再次確認：清除所有員工的全部資料？')) return;
   try {
     const snap = await getDocs(collection(db,'summer2026_employees'));
     let count = 0;
     for(const d of snap.docs) {
       await updateDoc(d.ref, {
+        group:'', charId:'', nickname:'', target:'', targetVal:0, currentGap:0,
         totalPts:0, taskPts:0, inbodyPts:0, rankPts:0,
         letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
         weeklyDiet:0, weeklySport:0, weeklyHealth:0, lastWeek:-1,
         lastDietDate:'', completionReward:'', spellReward:'',
-        completionDelivered:false, spellDelivered:false,
+        completionDelivered:false, spellDelivered:false, registeredAt:null,
       });
       count++;
     }
-    // 所有打卡紀錄標記已重置
     const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
     for(const d of checkSnap.docs) await updateDoc(d.ref, {status:'已重置'});
-    alert(`✅ 完成！共重置 ${count} 位員工的積分`);
+    alert(`✅ 完成！共重置 ${count} 位員工的所有資料`);
   } catch(e) { alert('重置失敗：'+e.message); }
 };
 
@@ -1121,6 +1260,7 @@ _$('nav-ranking').addEventListener('click', () => showPage('ranking'));
 _$('nav-jelly').addEventListener('click', () => showPage('jelly'));
 _$('nav-completion').addEventListener('click', () => showPage('completion'));
 _$('nav-spell').addEventListener('click', () => showPage('spell'));
+_$('nav-teams').addEventListener('click', () => showPage('teams'));
 _$('nav-settings').addEventListener('click', () => showPage('settings'));
 _$('nav-logout').addEventListener('click', adminLogout);
 
@@ -1140,6 +1280,9 @@ _$('spell-filter').addEventListener('change', loadSpell);
 _$('btn-export-spell').addEventListener('click', exportSpell);
 
 // Settings
+_$('btn-reload-teams').addEventListener('click', loadTeams);
+_$('btn-save-group').addEventListener('click', saveGroupChange);
+_$('btn-close-change-group').addEventListener('click', () => _$('change-group-modal').style.display='none');
 _$('btn-save-settings').addEventListener('click', saveSettings);
 _$('btn-retro-letters').addEventListener('click', retroLetters);
 _$('btn-reset-all').addEventListener('click', resetAll);
