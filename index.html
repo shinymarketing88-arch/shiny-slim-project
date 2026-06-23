@@ -207,7 +207,18 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 .upload-ok{background:#d4edda;border:1px solid #28a745;color:#155724;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:700;margin-top:10px;display:none}
 .modal-btns{display:flex;gap:8px;margin-top:12px}
 
-/* ── REWARD CHOICE ── */
+/* ── TEAM ── */
+.team-card{background:var(--white);border:1px solid var(--purple-border);border-radius:14px;padding:14px;margin:0 12px 10px;box-shadow:0 1px 3px rgba(108,99,255,.06)}
+.team-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.team-name{font-size:15px;font-weight:700;color:var(--purple-dark)}
+.team-code{font-size:11px;color:var(--text-light);background:var(--purple-pale);padding:3px 8px;border-radius:6px}
+.team-member{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--purple-border)}
+.team-member:last-child{border-bottom:none}
+.team-member-name{flex:1;font-size:13px;color:var(--text-dark)}
+.team-member-pts{font-size:13px;font-weight:700;color:var(--purple)}
+.team-member-tag{font-size:10px;padding:2px 6px;border-radius:6px}
+.team-join-area{display:flex;flex-direction:column;gap:10px}
+.team-join-inp{display:flex;gap:8px}
 .reward-choice{background:var(--purple-pale);border:2px solid var(--purple-border);border-radius:14px;padding:14px;cursor:pointer;transition:all .15s}
 .reward-choice:active{transform:scale(.97)}
 .reward-choice.selected{border-color:var(--purple);background:#ede9fe;box-shadow:0 0 0 3px var(--purple-border)}
@@ -460,6 +471,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
         <button class="rank-filter-btn active" id="rank-filter-all" data-filter="">🏆 綜合</button>
         <button class="rank-filter-btn" id="rank-filter-fat" data-filter="fat">⚡ 減脂組</button>
         <button class="rank-filter-btn" id="rank-filter-muscle" data-filter="muscle">💪 增肌組</button>
+        <button class="rank-filter-btn" id="rank-filter-team" data-filter="team">👥 我的隊伍</button>
       </div>
       <div class="rank-card" id="rank-wrap">
         <div style="text-align:center;font-size:12px;color:var(--text-light);padding:10px">點「更新」載入排行榜</div>
@@ -503,6 +515,11 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
             <input class="inp" id="p-nick" type="text" placeholder="輸入新暱稱" maxlength="8" style="flex:1"/>
             <button class="btn-main" id="btn-save-nick" style="width:auto;padding:0 18px;margin-top:0;font-size:13px">儲存</button>
           </div>
+        </div>
+
+        <div class="sec-hd" style="margin:0 0 8px">👥 我的隊伍</div>
+        <div id="team-section">
+          <div class="loading" style="text-align:center;padding:12px;font-size:12px;color:var(--text-light)">載入中...</div>
         </div>
 
         <div class="sec-hd" style="margin:0 0 8px">本週 InBody 更新</div>
@@ -625,7 +642,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, getDocs, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, getDocs, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 
 const FB_CFG = {
@@ -915,7 +932,139 @@ async function loadTodayStatus() {
     await updateQuestButtons();
   } catch(e) { console.error('loadTodayStatus:', e); }
 }
-// ── 完賽禮 & 拼字獎勵選擇 ──
+// ── 隊伍功能 ──
+let myTeam = null;
+
+function genInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array(6).fill(0).map(()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+async function loadTeamSection() {
+  const wrap = $('team-section');
+  if(!wrap) return;
+  try {
+    // 查詢我的隊伍
+    const q = query(collection(db,'summer2026_teams'), where('members','array-contains',S.empId));
+    const snap = await getDocs(q);
+    if(snap.empty) {
+      // 沒有隊伍：顯示建立/加入
+      myTeam = null;
+      wrap.innerHTML = `
+        <div class="team-card team-join-area">
+          <div style="font-size:12px;color:var(--purple-mid);margin-bottom:4px">尚未加入隊伍（2–5人，參加團體競賽）</div>
+          <div class="team-join-inp">
+            <input class="inp" id="team-name-inp" type="text" placeholder="隊伍名稱（最多10字）" maxlength="10" style="flex:1"/>
+            <button class="btn-main" id="btn-create-team" style="margin-top:0;width:auto;padding:0 14px;font-size:13px">建立</button>
+          </div>
+          <div style="text-align:center;font-size:11px;color:var(--text-light);margin:4px 0">或</div>
+          <div class="team-join-inp">
+            <input class="inp" id="team-code-inp" type="text" placeholder="輸入邀請碼（6碼）" maxlength="6" style="flex:1;text-transform:uppercase"/>
+            <button class="btn-main" id="btn-join-team" style="margin-top:0;width:auto;padding:0 14px;font-size:13px;background:#10b981">加入</button>
+          </div>
+        </div>`;
+      $('btn-create-team')?.addEventListener('click', createTeam);
+      $('btn-join-team')?.addEventListener('click', joinTeam);
+    } else {
+      // 已有隊伍
+      const teamDoc = snap.docs[0];
+      myTeam = {id: teamDoc.id, ...teamDoc.data()};
+      await renderTeamCard(wrap);
+    }
+  } catch(e) { wrap.innerHTML = `<div style="font-size:12px;color:var(--text-light);padding:10px">載入失敗</div>`; }
+}
+
+async function renderTeamCard(wrap) {
+  if(!myTeam) return;
+  // 讀取隊員資料
+  const memberData = [];
+  for(const empId of myTeam.members) {
+    const snap = await getDoc(doc(db,'summer2026_employees',empId));
+    if(snap.exists()) memberData.push({empId, ...snap.data()});
+  }
+  memberData.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+  const isLeader = myTeam.leaderId === S.empId;
+  const avgPts = memberData.length ? Math.round(memberData.reduce((s,m)=>s+(m.totalPts||0),0)/memberData.length) : 0;
+
+  wrap.innerHTML = `
+    <div class="team-card">
+      <div class="team-header">
+        <div>
+          <div class="team-name">🏴 ${myTeam.teamName}</div>
+          <div style="font-size:11px;color:var(--text-light);margin-top:2px">${memberData.length}/5人　平均積分 ${avgPts} 分</div>
+        </div>
+        <div style="text-align:right">
+          <div class="team-code">邀請碼：${myTeam.inviteCode}</div>
+          ${isLeader?`<div style="font-size:10px;color:var(--gold);margin-top:2px">👑 隊長</div>`:''}
+        </div>
+      </div>
+      ${memberData.map((m,i)=>`
+        <div class="team-member">
+          <span style="font-size:14px">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]||''}</span>
+          <span class="team-member-name">${m.nickname||m.name}${m.empId===S.empId?' 👈':''}</span>
+          <span class="team-member-tag" style="${m.group==='fat'?'background:#fff7ed;color:#c2410c':'background:#eff6ff;color:#1d4ed8'}">${m.group==='fat'?'減脂':'增肌'}</span>
+          <span class="team-member-pts">${m.totalPts||0}分</span>
+        </div>
+      `).join('')}
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-main" id="btn-refresh-team" style="margin-top:0;flex:1;font-size:12px">↻ 更新隊伍</button>
+        <button style="flex:0 0 auto;padding:10px 12px;background:var(--white);border:1px solid #fca5a5;border-radius:10px;color:var(--red);font-size:12px;cursor:pointer" id="btn-leave-team">離隊</button>
+      </div>
+    </div>`;
+  $('btn-refresh-team')?.addEventListener('click', loadTeamSection);
+  $('btn-leave-team')?.addEventListener('click', leaveTeam);
+}
+
+async function createTeam() {
+  const name = $('team-name-inp')?.value.trim();
+  if(!name) { toast('請輸入隊伍名稱'); return; }
+  try {
+    const code = genInviteCode();
+    const ref = await addDoc(collection(db,'summer2026_teams'), {
+      teamName: name, inviteCode: code,
+      leaderId: S.empId, members: [S.empId],
+      createdAt: new Date()
+    });
+    myTeam = {id:ref.id, teamName:name, inviteCode:code, leaderId:S.empId, members:[S.empId]};
+    toast(`✅ 隊伍「${name}」建立成功！邀請碼：${code}`);
+    await loadTeamSection();
+  } catch(e) { toast('建立失敗：'+e.message); }
+}
+
+async function joinTeam() {
+  const code = $('team-code-inp')?.value.trim().toUpperCase();
+  if(!code || code.length!==6) { toast('請輸入6碼邀請碼'); return; }
+  try {
+    const q = query(collection(db,'summer2026_teams'), where('inviteCode','==',code));
+    const snap = await getDocs(q);
+    if(snap.empty) { toast('找不到此邀請碼，請確認'); return; }
+    const teamDoc = snap.docs[0];
+    const teamData = teamDoc.data();
+    if(teamData.members.includes(S.empId)) { toast('你已在此隊伍中'); return; }
+    if(teamData.members.length >= 5) { toast('此隊伍已滿（最多5人）'); return; }
+    await updateDoc(teamDoc.ref, { members: [...teamData.members, S.empId] });
+    toast(`✅ 成功加入「${teamData.teamName}」！`);
+    await loadTeamSection();
+  } catch(e) { toast('加入失敗：'+e.message); }
+}
+
+async function leaveTeam() {
+  if(!myTeam) return;
+  if(!confirm(`確定要離開「${myTeam.teamName}」嗎？`)) return;
+  try {
+    const newMembers = myTeam.members.filter(id=>id!==S.empId);
+    if(newMembers.length === 0) {
+      // 隊伍解散
+      await updateDoc(doc(db,'summer2026_teams',myTeam.id), {members:[], disbanded:true});
+    } else {
+      const newLeader = myTeam.leaderId===S.empId ? newMembers[0] : myTeam.leaderId;
+      await updateDoc(doc(db,'summer2026_teams',myTeam.id), {members:newMembers, leaderId:newLeader});
+    }
+    myTeam = null;
+    toast('已離隊');
+    await loadTeamSection();
+  } catch(e) { toast('離隊失敗：'+e.message); }
+}
 let completionChoice = '';
 let spellChoice = '';
 
@@ -1223,7 +1372,31 @@ async function loadRanking(group) {
   try {
     const snap = await getDocs(collection(db,'summer2026_employees'));
     let items = snap.docs.map(d=>d.data()).filter(i=>i.group&&i.nickname);
-    if(currentRankFilter) items = items.filter(i=>i.group===currentRankFilter);
+    if(currentRankFilter === 'team') {
+    // 我的隊伍排行
+    if(!myTeam) {
+      wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚未加入隊伍</div>';
+      return;
+    }
+    const memberIds = myTeam.members;
+    const snap2 = await getDocs(collection(db,'summer2026_employees'));
+    let items = snap2.docs.map(d=>d.data()).filter(i=>memberIds.includes(i.empId)&&i.nickname);
+    items.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+    const avgPts = items.length ? Math.round(items.reduce((s,i)=>s+(i.totalPts||0),0)/items.length) : 0;
+    wrap.innerHTML = `
+      <div style="text-align:center;font-size:12px;font-weight:700;color:var(--purple-dark);margin-bottom:8px">🏴 ${myTeam.teamName}　平均 ${avgPts} 分</div>
+      ${items.map((i,idx)=>{
+        const isMe=i.empId===S.empId;
+        const tagStyle=i.group==='fat'?'background:#fff7ed;color:#c2410c':'background:#eff6ff;color:#1d4ed8';
+        return `<div class="rank-row${isMe?' me':''}">
+          <span class="rn ${['g','s','b'][idx]||'n'}">${idx+1}</span>
+          <span class="r-name" style="${isMe?'font-weight:700;color:var(--purple)':''}">${i.nickname||i.empId}${isMe?' 👈':''}</span>
+          <span class="r-tag" style="${tagStyle}">${i.group==='fat'?'減脂':'增肌'}</span>
+          <span class="r-pts">${i.totalPts||0}分</span>
+        </div>`;
+      }).join('')}`;
+    return;
+  }
     items.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
     if(!items.length){wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚無資料</div>';return;}
     const rnCls=['g','s','b'];
@@ -1266,6 +1439,8 @@ function renderProfile() {
     </div>
     <div style="font-size:11px;color:var(--text-light)">目標：${S.target||'未設定'}</div>
   `;
+  // 載入隊伍
+  loadTeamSection();
 }
 
 // ── CHANGE CHAR ──
@@ -1363,6 +1538,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('rank-filter-all').addEventListener('click', () => loadRanking(''));
   $('rank-filter-fat').addEventListener('click', () => loadRanking('fat'));
   $('rank-filter-muscle').addEventListener('click', () => loadRanking('muscle'));
+  $('rank-filter-team').addEventListener('click', () => loadRanking('team'));
 
   // Refresh
   $('btn-refresh').addEventListener('click', async () => {
