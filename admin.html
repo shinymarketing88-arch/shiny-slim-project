@@ -235,8 +235,9 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-gold" id="btn-save-settings">💾 儲存設定</button>
           <button class="btn btn-primary" id="btn-retro-letters">🔤 補發所有員工字母</button>
+          <button class="btn btn-red" id="btn-reset-all">🗑️ 重置所有員工積分</button>
         </div>
-        <div style="font-size:11px;color:#8888aa;margin-top:8px">補發字母：根據每位員工目前積分，計算應得字母數並補發（每8分一個）</div>
+        <div style="font-size:11px;color:#8888aa;margin-top:8px">重置積分：清除所有員工的積分、打卡紀錄、字母，保留組別/角色/暱稱設定</div>
       </div>
     </div>
 
@@ -272,6 +273,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div id="edit-form" style="display:flex;flex-direction:column;gap:10px"></div>
     <div style="display:flex;gap:8px;margin-top:1rem">
       <button class="btn btn-gold" style="flex:1" id="btn-save-edit">💾 儲存</button>
+      <button class="btn btn-red" id="btn-reset-one">🗑️ 重置積分</button>
       <button class="btn btn-primary" id="btn-close-edit">取消</button>
     </div>
   </div>
@@ -1030,6 +1032,55 @@ window.saveMakeup = async function() {
   }
 };
 
+window.resetOne = async function() {
+  const empId = document.getElementById('edit-empid')?.value;
+  if(!empId) return;
+  if(!confirm(`確定要重置 ${empId} 的所有積分和打卡紀錄嗎？\n（組別、角色、暱稱會保留）`)) return;
+  try {
+    const empRef = doc(db,'summer2026_employees',empId);
+    const snap = await getDoc(empRef);
+    if(!snap.exists()) return;
+    const d = snap.data();
+    await updateDoc(empRef, {
+      totalPts:0, taskPts:0, inbodyPts:0, rankPts:0,
+      letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
+      weeklyDiet:0, weeklySport:0, weeklyHealth:0, lastWeek:-1,
+      lastDietDate:'', completionReward:'', spellReward:'',
+      completionDelivered:false, spellDelivered:false,
+    });
+    // 刪除該員工的打卡紀錄
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const toDelete = checkSnap.docs.filter(d=>d.data().empId===empId);
+    for(const d of toDelete) await updateDoc(d.ref, {status:'已重置'});
+    alert(`✅ ${empId} 積分已重置！`);
+    document.getElementById('edit-modal').style.display='none';
+    loadMembers();
+  } catch(e) { alert('重置失敗：'+e.message); }
+};
+
+window.resetAll = async function() {
+  if(!confirm('⚠️ 確定要重置所有員工的積分和打卡紀錄嗎？\n此操作無法復原！')) return;
+  if(!confirm('再次確認：清除全部測試資料？')) return;
+  try {
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    let count = 0;
+    for(const d of snap.docs) {
+      await updateDoc(d.ref, {
+        totalPts:0, taskPts:0, inbodyPts:0, rankPts:0,
+        letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
+        weeklyDiet:0, weeklySport:0, weeklyHealth:0, lastWeek:-1,
+        lastDietDate:'', completionReward:'', spellReward:'',
+        completionDelivered:false, spellDelivered:false,
+      });
+      count++;
+    }
+    // 所有打卡紀錄標記已重置
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    for(const d of checkSnap.docs) await updateDoc(d.ref, {status:'已重置'});
+    alert(`✅ 完成！共重置 ${count} 位員工的積分`);
+  } catch(e) { alert('重置失敗：'+e.message); }
+};
+
 window.saveSettings = async function() {
   try {
     const numFields = ['dietPts','photoEssayPts',
@@ -1091,9 +1142,11 @@ _$('btn-export-spell').addEventListener('click', exportSpell);
 // Settings
 _$('btn-save-settings').addEventListener('click', saveSettings);
 _$('btn-retro-letters').addEventListener('click', retroLetters);
+_$('btn-reset-all').addEventListener('click', resetAll);
 
 // 編輯 Modal
 _$('btn-save-edit').addEventListener('click', saveEdit);
+_$('btn-reset-one').addEventListener('click', resetOne);
 _$('btn-close-edit').addEventListener('click', () => _$('edit-modal').style.display='none');
 
 // 補登 Modal
