@@ -86,6 +86,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="nav-item" id="nav-inbody">📐 InBody 數據</div>
     <div class="nav-item" id="nav-ranking">🏆 排行榜</div>
     <div class="nav-item" id="nav-jelly">🧡 馬甲果凍發放</div>
+    <div class="nav-item" id="nav-completion">🎁 完賽禮名單</div>
+    <div class="nav-item" id="nav-spell">🎉 拼字獎勵名單</div>
     <div class="nav-item" id="nav-settings">⚙️ 活動設定</div>
     <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" id="nav-logout">🚪 登出</div>
   </div>
@@ -176,6 +178,50 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <button class="btn btn-sm btn-primary" id="btn-reload-ranking">🔄 重新載入</button>
       </div>
       <div id="ranking-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 完賽禮名單 -->
+    <div class="page" id="page-completion">
+      <div class="page-title">🎁 完賽禮名單</div>
+      <div class="card" style="margin-bottom:1rem;background:#1a1a2e;border-color:#3a3a6a">
+        <div style="font-size:13px;color:#aaaaff;line-height:1.7">
+          <b>完賽條件：</b>總積分 ≥ 45分 + 變身日記審核通過<br>
+          員工選定獎品後，主辦人確認發放並標記。
+        </div>
+      </div>
+      <div class="filter-row">
+        <select id="completion-filter">
+          <option value="all">全部</option>
+          <option value="pending">待發放</option>
+          <option value="done">已發放</option>
+          <option value="no-choice">未選獎品</option>
+        </select>
+        <button class="btn btn-sm btn-primary" id="btn-reload-completion">🔄 重新載入</button>
+        <button class="btn btn-sm btn-gold" id="btn-export-completion">📥 匯出 Excel</button>
+      </div>
+      <div id="completion-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 拼字獎勵名單 -->
+    <div class="page" id="page-spell">
+      <div class="page-title">🎉 拼字獎勵名單</div>
+      <div class="card" style="margin-bottom:1rem;background:#1a1a2e;border-color:#3a3a6a">
+        <div style="font-size:13px;color:#aaaaff;line-height:1.7">
+          <b>集齊條件：</b>收集 SHINYBRANDS 全部 11 個字母（S×2、N×2）<br>
+          員工選定獎品後，主辦人確認發放並標記。
+        </div>
+      </div>
+      <div class="filter-row">
+        <select id="spell-filter">
+          <option value="all">全部</option>
+          <option value="pending">待發放</option>
+          <option value="done">已發放</option>
+          <option value="no-choice">未選獎品</option>
+        </select>
+        <button class="btn btn-sm btn-primary" id="btn-reload-spell">🔄 重新載入</button>
+        <button class="btn btn-sm btn-gold" id="btn-export-spell">📥 匯出 Excel</button>
+      </div>
+      <div id="spell-table"><div class="loading">載入中...</div></div>
     </div>
 
     <!-- 活動設定 -->
@@ -324,6 +370,8 @@ window.showPage = function(page) {
   if(page==='ranking') loadRanking();
   if(page==='settings') loadSettings();
   if(page==='jelly') loadJelly();
+  if(page==='completion') loadCompletion();
+  if(page==='spell') loadSpell();
 };
 
 async function loadDashboard() {
@@ -704,6 +752,137 @@ window.retroLetters = async function() {
   } catch(e) { alert('補發失敗：'+e.message); }
 };
 
+window.loadCompletion = async function() {
+  const filter = document.getElementById('completion-filter').value;
+  const wrap = document.getElementById('completion-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    let items = snap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(i => i.group && (i.totalPts>=45 || i.completionReward));
+
+    if(filter==='pending') items = items.filter(i=>i.completionReward && !i.completionDelivered);
+    else if(filter==='done') items = items.filter(i=>i.completionDelivered);
+    else if(filter==='no-choice') items = items.filter(i=>!i.completionReward);
+
+    if(!items.length){wrap.innerHTML='<div class="loading">無資料</div>';return;}
+
+    wrap.innerHTML = `<table>
+      <tr><th>員工</th><th>暱稱</th><th>組別</th><th>積分</th><th>選擇獎品</th><th>狀態</th><th>操作</th></tr>
+      ${items.map(i=>`<tr>
+        <td>${i.name}<br><span style="font-size:10px;color:#8888aa">${i.empId}</span></td>
+        <td>${i.nickname||'—'}</td>
+        <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span></td>
+        <td style="color:#ffd700;font-weight:700">${i.totalPts||0}</td>
+        <td>${i.completionReward||'<span style="color:#888">未選</span>'}</td>
+        <td><span class="badge ${i.completionDelivered?'badge-approved':'badge-pending'}">${i.completionDelivered?'已發放':'待發放'}</span></td>
+        <td>${i.completionReward&&!i.completionDelivered?
+          `<button class="btn btn-sm btn-green" onclick="deliverReward('completion','${i.empId}')">✅ 標記已發放</button>`:
+          i.completionDelivered?'—':'<span style="color:#888;font-size:11px">等待選擇</span>'}</td>
+      </tr>`).join('')}
+    </table>`;
+  } catch(e){wrap.innerHTML='<div class="loading" style="color:#ff6666">載入失敗</div>';}
+};
+
+window.loadSpell = async function() {
+  const filter = document.getElementById('spell-filter').value;
+  const wrap = document.getElementById('spell-table');
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  const TARGET='SHINYBRANDS';
+  try {
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    let items = snap.docs.map(d=>({id:d.id,...d.data()})).filter(i=>{
+      if(!i.letters||!i.letters.length) return false;
+      const have=[...i.letters];
+      const complete=TARGET.split('').every(l=>{const idx=have.indexOf(l);if(idx!==-1){have.splice(idx,1);return true;}return false;});
+      return complete || i.spellReward;
+    });
+
+    if(filter==='pending') items=items.filter(i=>i.spellReward&&!i.spellDelivered);
+    else if(filter==='done') items=items.filter(i=>i.spellDelivered);
+    else if(filter==='no-choice') items=items.filter(i=>!i.spellReward);
+
+    if(!items.length){wrap.innerHTML='<div class="loading">無資料</div>';return;}
+
+    wrap.innerHTML = `<table>
+      <tr><th>員工</th><th>暱稱</th><th>組別</th><th>字母數</th><th>選擇獎品</th><th>狀態</th><th>操作</th></tr>
+      ${items.map(i=>`<tr>
+        <td>${i.name}<br><span style="font-size:10px;color:#8888aa">${i.empId}</span></td>
+        <td>${i.nickname||'—'}</td>
+        <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span></td>
+        <td>${(i.letters||[]).length}/11</td>
+        <td>${i.spellReward||'<span style="color:#888">未選</span>'}</td>
+        <td><span class="badge ${i.spellDelivered?'badge-approved':'badge-pending'}">${i.spellDelivered?'已發放':'待發放'}</span></td>
+        <td>${i.spellReward&&!i.spellDelivered?
+          `<button class="btn btn-sm btn-green" onclick="deliverReward('spell','${i.empId}')">✅ 標記已發放</button>`:
+          i.spellDelivered?'—':'<span style="color:#888;font-size:11px">等待選擇</span>'}</td>
+      </tr>`).join('')}
+    </table>`;
+  } catch(e){wrap.innerHTML='<div class="loading" style="color:#ff6666">載入失敗</div>';}
+};
+
+window.deliverReward = async function(type, empId) {
+  const label = type==='completion'?'完賽禮':'拼字獎勵';
+  if(!confirm(`確定標記 ${empId} 的${label}為已發放？`)) return;
+  try {
+    const field = type==='completion' ? 'completionDelivered' : 'spellDelivered';
+    await updateDoc(doc(db,'summer2026_employees',empId), {[field]:true, [`${field}At`]:new Date()});
+    alert('✅ 已標記發放！');
+    if(type==='completion') loadCompletion();
+    else loadSpell();
+  } catch(e){alert('操作失敗：'+e.message);}
+};
+
+window.exportCompletion = async function() {
+  try {
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    const items = snap.docs.map(d=>d.data())
+      .filter(i=>i.group&&(i.totalPts>=45||i.completionReward));
+    const rows = [['員工編號','姓名','暱稱','組別','積分','選擇獎品','是否發放','選擇時間']];
+    items.forEach(i=>{
+      rows.push([
+        i.empId, i.name, i.nickname||'', i.group==='fat'?'減脂':'增肌',
+        i.totalPts||0, i.completionReward||'未選',
+        i.completionDelivered?'已發放':'未發放',
+        i.completionRewardAt?.seconds?new Date(i.completionRewardAt.seconds*1000).toLocaleDateString('zh-TW'):''
+      ]);
+    });
+    downloadCSV(rows, '完賽禮名單');
+  } catch(e){alert('匯出失敗：'+e.message);}
+};
+
+window.exportSpell = async function() {
+  const TARGET='SHINYBRANDS';
+  try {
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    const items = snap.docs.map(d=>d.data()).filter(i=>{
+      if(!i.letters?.length) return false;
+      const have=[...i.letters];
+      return TARGET.split('').every(l=>{const idx=have.indexOf(l);if(idx!==-1){have.splice(idx,1);return true;}return false;})||i.spellReward;
+    });
+    const rows = [['員工編號','姓名','暱稱','組別','字母數','選擇獎品','是否發放','選擇時間']];
+    items.forEach(i=>{
+      rows.push([
+        i.empId, i.name, i.nickname||'', i.group==='fat'?'減脂':'增肌',
+        (i.letters||[]).length, i.spellReward||'未選',
+        i.spellDelivered?'已發放':'未發放',
+        i.spellRewardAt?.seconds?new Date(i.spellRewardAt.seconds*1000).toLocaleDateString('zh-TW'):''
+      ]);
+    });
+    downloadCSV(rows, '拼字獎勵名單');
+  } catch(e){alert('匯出失敗：'+e.message);}
+};
+
+function downloadCSV(rows, filename) {
+  const bom = '\uFEFF';
+  const csv = bom + rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${filename}_${new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')}.csv`;
+  a.click();
+}
+
 window.loadJelly = async function() {
   const filter = document.getElementById('jelly-filter').value;
   const wrap = document.getElementById('jelly-table');
@@ -889,6 +1068,8 @@ _$('nav-members').addEventListener('click', () => showPage('members'));
 _$('nav-inbody').addEventListener('click', () => showPage('inbody'));
 _$('nav-ranking').addEventListener('click', () => showPage('ranking'));
 _$('nav-jelly').addEventListener('click', () => showPage('jelly'));
+_$('nav-completion').addEventListener('click', () => showPage('completion'));
+_$('nav-spell').addEventListener('click', () => showPage('spell'));
 _$('nav-settings').addEventListener('click', () => showPage('settings'));
 _$('nav-logout').addEventListener('click', adminLogout);
 
@@ -900,6 +1081,12 @@ _$('btn-calc-rank').addEventListener('click', calcRankPts);
 _$('btn-reload-ranking').addEventListener('click', loadRanking);
 _$('btn-reload-jelly').addEventListener('click', loadJelly);
 _$('jelly-filter').addEventListener('change', loadJelly);
+_$('btn-reload-completion').addEventListener('click', loadCompletion);
+_$('completion-filter').addEventListener('change', loadCompletion);
+_$('btn-export-completion').addEventListener('click', exportCompletion);
+_$('btn-reload-spell').addEventListener('click', loadSpell);
+_$('spell-filter').addEventListener('change', loadSpell);
+_$('btn-export-spell').addEventListener('click', exportSpell);
 
 // Settings
 _$('btn-save-settings').addEventListener('click', saveSettings);

@@ -207,7 +207,10 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 .upload-ok{background:#d4edda;border:1px solid #28a745;color:#155724;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:700;margin-top:10px;display:none}
 .modal-btns{display:flex;gap:8px;margin-top:12px}
 
-/* ── TOAST ── */
+/* ── REWARD CHOICE ── */
+.reward-choice{background:var(--purple-pale);border:2px solid var(--purple-border);border-radius:14px;padding:14px;cursor:pointer;transition:all .15s}
+.reward-choice:active{transform:scale(.97)}
+.reward-choice.selected{border-color:var(--purple);background:#ede9fe;box-shadow:0 0 0 3px var(--purple-border)}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--purple-dark);color:var(--white);padding:10px 20px;border-radius:12px;font-size:13px;font-weight:700;z-index:300;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
 </style>
@@ -563,6 +566,63 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 
 <div class="toast" id="toast"></div>
 
+<!-- 完賽禮選擇 Modal -->
+<div class="modal-bg" id="completion-modal">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🎁</div>
+    <div style="font-size:16px;font-weight:700;color:var(--purple-dark);margin-bottom:4px">恭喜達成完賽條件！</div>
+    <div style="font-size:12px;color:var(--purple-mid);margin-bottom:16px">請選擇你的完賽禮（三選一），選定後無法更改</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <div class="reward-choice" id="choice-c1" data-choice="m2超能水光凍">
+        <div style="font-size:22px;margin-bottom:4px">💧</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple-dark)">m2 超能水光凍</div>
+        <div style="font-size:11px;color:var(--purple-mid)">×10入</div>
+      </div>
+      <div class="reward-choice" id="choice-c2" data-choice="m2超能膠原凍">
+        <div style="font-size:22px;margin-bottom:4px">✨</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple-dark)">m2 超能膠原凍</div>
+        <div style="font-size:11px;color:var(--purple-mid)">×10入</div>
+      </div>
+      <div class="reward-choice" id="choice-c3" data-choice="新普利夜酵凍">
+        <div style="font-size:22px;margin-bottom:4px">🌙</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple-dark)">新普利夜酵凍</div>
+        <div style="font-size:11px;color:var(--purple-mid)">×10入</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-light);margin-bottom:12px" id="completion-selected-hint">請點選上方獎品</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-back" id="btn-close-completion" style="flex:0 0 80px">稍後再選</button>
+      <button class="btn-main" id="btn-confirm-completion" style="margin-top:0;flex:1;opacity:.5" disabled>確認選擇</button>
+    </div>
+  </div>
+</div>
+
+<!-- 拼字獎勵選擇 Modal -->
+<div class="modal-bg" id="spell-modal">
+  <div class="modal-sheet" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🎉</div>
+    <div style="font-size:16px;font-weight:700;color:var(--purple-dark);margin-bottom:4px">集齊 SHINYBRANDS！</div>
+    <div style="font-size:12px;color:var(--purple-mid);margin-bottom:16px">請選擇你的 Bonus 獎勵（二選一），選定後無法更改</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <div class="reward-choice" id="choice-s1" data-choice="m2膠原C套組">
+        <div style="font-size:22px;margin-bottom:4px">🌸</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple-dark)">m2 超能膠原C 30入</div>
+        <div style="font-size:11px;color:var(--purple-mid)">+ m2 超啾C隨行杯 ×1</div>
+      </div>
+      <div class="reward-choice" id="choice-s2" data-choice="新普利益生菌DX">
+        <div style="font-size:22px;margin-bottom:4px">🔬</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple-dark)">新普利日本專利益生菌DX</div>
+        <div style="font-size:11px;color:var(--purple-mid)">30入</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-light);margin-bottom:12px" id="spell-selected-hint">請點選上方獎品</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-back" id="btn-close-spell" style="flex:0 0 80px">稍後再選</button>
+      <button class="btn-main" id="btn-confirm-spell" style="margin-top:0;flex:1;opacity:.5" disabled>確認選擇</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getFirestore, doc, getDoc, updateDoc, addDoc, collection, getDocs, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -832,6 +892,8 @@ async function updateQuestButtons() {
     const photoApproved = allMyCheckins.find(c=>c.taskType==='照片心得'&&c.status==='通過');
     const photoPending = allMyCheckins.find(c=>c.taskType==='照片心得'&&c.status==='待審核');
     const photoBtn = $('qbtn-photo');
+    // 更新 photoApproved 狀態供完賽禮判斷
+    S.photoApproved = !!photoApproved;
     if(photoBtn) {
       if(photoApproved) {
         photoBtn.className='q-btn done'; photoBtn.textContent='✅ 已完成'; photoBtn.disabled=true;
@@ -842,6 +904,8 @@ async function updateQuestButtons() {
         photoBtn.className='q-btn todo'; photoBtn.textContent='▶ 上傳'; photoBtn.disabled=false;
       }
     }
+    // 完賽條件檢查
+    checkCompletionAndSpell();
   } catch(e) { console.error('updateQuestButtons:', e); }
 }
 async function loadTodayStatus() {
@@ -851,6 +915,98 @@ async function loadTodayStatus() {
     await updateQuestButtons();
   } catch(e) { console.error('loadTodayStatus:', e); }
 }
+// ── 完賽禮 & 拼字獎勵選擇 ──
+let completionChoice = '';
+let spellChoice = '';
+
+function initRewardModals() {
+  // 完賽禮選擇
+  ['choice-c1','choice-c2','choice-c3'].forEach(id => {
+    $(id)?.addEventListener('click', () => {
+      document.querySelectorAll('#completion-modal .reward-choice').forEach(el=>el.classList.remove('selected'));
+      $(id).classList.add('selected');
+      completionChoice = $(id).dataset.choice;
+      $('completion-selected-hint').textContent = `已選擇：${completionChoice}`;
+      const btn=$('btn-confirm-completion');
+      btn.disabled=false; btn.style.opacity='1';
+    });
+  });
+  $('btn-close-completion')?.addEventListener('click',()=>$('completion-modal').classList.remove('open'));
+  $('btn-confirm-completion')?.addEventListener('click', async ()=>{
+    if(!completionChoice) return;
+    try {
+      await updateDoc(doc(db,'summer2026_employees',S.empId),{
+        completionReward:completionChoice, completionRewardAt:new Date()
+      });
+      S.completionReward = completionChoice;
+      $('completion-modal').classList.remove('open');
+      $('pv-c').textContent=`✅ 已選：${completionChoice}`;
+      $('pb-c').style.width='100%';
+      toast('🎁 完賽禮已選定！等待主辦人發放');
+    } catch(e){ toast('儲存失敗，請重試'); }
+  });
+
+  // 拼字獎勵選擇
+  ['choice-s1','choice-s2'].forEach(id=>{
+    $(id)?.addEventListener('click',()=>{
+      document.querySelectorAll('#spell-modal .reward-choice').forEach(el=>el.classList.remove('selected'));
+      $(id).classList.add('selected');
+      spellChoice=$(id).dataset.choice;
+      $('spell-selected-hint').textContent=`已選擇：${spellChoice}`;
+      const btn=$('btn-confirm-spell');
+      btn.disabled=false; btn.style.opacity='1';
+    });
+  });
+  $('btn-close-spell')?.addEventListener('click',()=>$('spell-modal').classList.remove('open'));
+  $('btn-confirm-spell')?.addEventListener('click', async ()=>{
+    if(!spellChoice) return;
+    try {
+      await updateDoc(doc(db,'summer2026_employees',S.empId),{
+        spellReward:spellChoice, spellRewardAt:new Date()
+      });
+      S.spellReward = spellChoice;
+      $('spell-modal').classList.remove('open');
+      toast('🎉 Bonus 獎勵已選定！等待主辦人發放');
+    } catch(e){ toast('儲存失敗，請重試'); }
+  });
+}
+
+function checkSpellComplete() {
+  const TARGET='SHINYBRANDS';
+  const have=[...(S.letters||[])];
+  return TARGET.split('').every(l=>{const i=have.indexOf(l);if(i!==-1){have.splice(i,1);return true;}return false;});
+}
+
+function checkCompletionAndSpell() {
+  const pts=S.totalPts||0;
+  const hasPhoto=S.photoApproved||false;
+
+  // 完賽禮進度條
+  const condPts=pts>=45;
+  if(condPts && hasPhoto) {
+    $('pb-c').style.width='100%';
+    if(S.completionReward) {
+      $('pv-c').textContent=`✅ 已選：${S.completionReward}`;
+    } else {
+      $('pv-c').textContent='🎁 點此領取完賽禮！';
+      $('pv-c').style.cursor='pointer';
+      $('pv-c').addEventListener('click',()=>$('completion-modal').classList.add('open'),{once:true});
+    }
+  } else {
+    const missing=[];
+    if(!condPts) missing.push(`積分差 ${45-pts} 分`);
+    if(!hasPhoto) missing.push('變身日記未完成');
+    $('pv-c').textContent=missing.join('、');
+    $('pb-c').style.width=Math.min(Math.round((pts/45)*70+(hasPhoto?30:0)),99)+'%';
+  }
+
+  // 拼字集齊 → 跳出選擇框
+  if(checkSpellComplete() && !S.spellReward) {
+    setTimeout(()=>$('spell-modal').classList.add('open'), 800);
+  }
+}
+
+// ── MAIN RENDER ──
 function renderMain() {
   const day = getDay();
   const c = getChar(S.charId);
@@ -867,6 +1023,7 @@ function renderMain() {
   renderSpell();
   renderJelly();
   renderWeekly();
+  checkCompletionAndSpell();
 }
 
 function renderMap(day) {
@@ -1138,6 +1295,9 @@ async function confirmChangeChar() {
 
 // ── EVENT BINDINGS ──
 document.addEventListener('DOMContentLoaded', () => {
+
+  // Init reward modals
+  initRewardModals();
 
   // Login
   $('btn-login').addEventListener('click', doLogin);
