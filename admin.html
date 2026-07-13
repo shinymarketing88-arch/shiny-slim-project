@@ -148,6 +148,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         </select>
         <input type="text" class="search-box" id="search-member" placeholder="搜尋員工" oninput="loadMembers()"/>
         <button class="btn btn-sm btn-primary" id="btn-reload-members">🔄 重新載入</button>
+        <button class="btn btn-sm btn-green" id="btn-add-member">➕ 新增員工</button>
       </div>
       <div id="members-table"><div class="loading">載入中...</div></div>
     </div>
@@ -321,6 +322,28 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     </div>
   </div>
 </div>
+<!-- 新增員工 Modal -->
+<div class="modal" id="add-member-modal">
+  <div class="modal-inner" style="max-width:400px">
+    <h3 style="color:#ffd700;margin-bottom:1rem">➕ 新增員工</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="form-row">
+        <label class="form-label">員工編號</label>
+        <input class="form-input" type="text" id="new-emp-id" placeholder="例如 VE0305 或 PT0040" style="text-transform:uppercase"/>
+      </div>
+      <div class="form-row">
+        <label class="form-label">員工姓名</label>
+        <input class="form-input" type="text" id="new-emp-name" placeholder="請輸入姓名"/>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#8888aa;margin-top:8px">新增後員工即可用此編號登入遊戲</div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn btn-gold" style="flex:1" id="btn-save-new-member">✅ 新增</button>
+      <button class="btn btn-primary" id="btn-close-add-member">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- 只改組別 Modal -->
 <div class="modal" id="change-group-modal">
   <div class="modal-inner" style="max-width:360px">
@@ -358,7 +381,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, collection, getDocs, doc, updateDoc, getDoc, addDoc, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getFirestore, collection, getDocs, doc, updateDoc, getDoc, addDoc, setDoc, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCRzerWEnFDmPcCcRCETsMlp8WdAT0k90E",
@@ -1174,6 +1197,30 @@ window.saveMakeup = async function() {
   }
 };
 
+window.addMember = async function() {
+  const empId = document.getElementById('new-emp-id').value.trim().toUpperCase();
+  const name = document.getElementById('new-emp-name').value.trim();
+  if(!empId) { alert('請輸入員工編號'); return; }
+  if(!name) { alert('請輸入員工姓名'); return; }
+  try {
+    const snap = await getDoc(doc(db,'summer2026_employees',empId));
+    if(snap.exists()) { alert(`${empId} 已存在！`); return; }
+    await setDoc(doc(db,'summer2026_employees',empId), {
+      empId, name,
+      group:'', charId:'', nickname:'', target:'', targetVal:0, currentGap:0,
+      totalPts:0, taskPts:0, inbodyPts:0, rankPts:0,
+      letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
+      weeklyDiet:0, weeklySport:0, weeklyHealth:0, lastWeek:-1,
+      lastDietDate:'', createdAt: new Date()
+    });
+    alert(`✅ ${empId} ${name} 已新增！`);
+    document.getElementById('add-member-modal').style.display='none';
+    document.getElementById('new-emp-id').value='';
+    document.getElementById('new-emp-name').value='';
+    loadMembers();
+  } catch(e) { alert('新增失敗：'+e.message); }
+};
+
 window.resetOne = async function() {
   const empId = document.getElementById('edit-empid')?.value;
   if(!empId) return;
@@ -1267,6 +1314,9 @@ _$('nav-logout').addEventListener('click', adminLogout);
 // Reload buttons
 _$('btn-reload-checkins').addEventListener('click', loadCheckins);
 _$('btn-reload-members').addEventListener('click', loadMembers);
+_$('btn-add-member').addEventListener('click', () => _$('add-member-modal').style.display='flex');
+_$('btn-save-new-member').addEventListener('click', addMember);
+_$('btn-close-add-member').addEventListener('click', () => _$('add-member-modal').style.display='none');
 _$('btn-reload-inbody').addEventListener('click', loadInbody);
 _$('btn-calc-rank').addEventListener('click', calcRankPts);
 _$('btn-reload-ranking').addEventListener('click', loadRanking);
