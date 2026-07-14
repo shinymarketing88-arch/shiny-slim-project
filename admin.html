@@ -247,8 +247,9 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <button class="btn btn-gold" id="btn-save-settings">💾 儲存設定</button>
           <button class="btn btn-primary" id="btn-retro-letters">🔤 補發所有員工字母</button>
           <button class="btn btn-red" id="btn-reset-all">🗑️ 重置所有員工積分</button>
+          <button class="btn btn-green" id="btn-recalc">🔍 重新計算所有積分</button>
         </div>
-        <div style="font-size:11px;color:#8888aa;margin-top:8px">重置積分：清除所有員工的積分、打卡紀錄、字母，保留組別/角色/暱稱設定</div>
+        <div style="font-size:11px;color:#8888aa;margin-top:8px">重新計算：針對所有「通過」的打卡紀錄重新計算積分，修復漏算問題</div>
       </div>
     </div>
 
@@ -322,6 +323,26 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     </div>
   </div>
 </div>
+<!-- 修改打卡日期 Modal -->
+<div class="modal" id="edit-date-modal">
+  <div class="modal-inner" style="max-width:380px">
+    <h3 style="color:#ffd700;margin-bottom:4px">📅 修改打卡日期</h3>
+    <div style="font-size:12px;color:#8888aa;margin-bottom:1rem" id="edit-date-info">—</div>
+    <div style="font-size:11px;color:#ff9944;background:#2a1a00;border-radius:6px;padding:8px 10px;margin-bottom:1rem">
+      ⚠️ 修改後前台會重新判斷該日是否已打卡，員工即可在今天重新上傳。
+    </div>
+    <input type="hidden" id="edit-date-checkin-id"/>
+    <div class="form-row">
+      <label class="form-label">修改為此日期</label>
+      <input class="form-input" type="date" id="edit-date-value"/>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem">
+      <button class="btn btn-gold" style="flex:1" id="btn-save-edit-date">✅ 確認修改</button>
+      <button class="btn btn-primary" id="btn-close-edit-date">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- 新增員工 Modal -->
 <div class="modal" id="add-member-modal">
   <div class="modal-inner" style="max-width:400px">
@@ -479,11 +500,12 @@ window.loadCheckins = async function() {
           <td>${i.taskType||''}</td>
           <td>${i.fileUrl ? `<img class="img-thumb" src="${i.fileUrl}" onclick="openReview('${i.id}','${i.fileUrl}','${i.empName}','${i.taskType}')">` : '無截圖'}</td>
           <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
-          <td style="display:flex;gap:4px">
+          <td style="display:flex;gap:4px;flex-wrap:wrap">
             ${i.status==='待審核'?`
               <button class="btn btn-sm btn-green" onclick="quickReview('${i.id}','通過','${i.empId}',${i.pts||0},'${i.taskType||''}')">✅</button>
               <button class="btn btn-sm btn-red" onclick="quickReview('${i.id}','駁回','${i.empId}',${i.pts||0},'${i.taskType||''}')">❌</button>
-            `:'—'}
+            `:''}
+            <button class="btn btn-sm btn-primary" onclick="openEditDateModal('${i.id}','${i.empName}','${i.taskType}',${i.createdAt?.seconds||0})">📅</button>
           </td>
         </tr>
       `).join('')}
@@ -496,6 +518,9 @@ window.openReview = function(id, url, name, task) {
   document.getElementById('modal-img').src = url;
   document.getElementById('modal-title').textContent = `審核：${name} — ${task}`;
   document.getElementById('review-modal').classList.add('open');
+  // 儲存審核所需資料
+  document.getElementById('review-modal').dataset.empId = empId || '';
+  document.getElementById('review-modal').dataset.taskType = task || '';
 };
 
 window.closeModal = function() {
@@ -505,7 +530,12 @@ window.closeModal = function() {
 
 window.reviewCheckin = async function(status) {
   if(!currentCheckinId) return;
-  await quickReview(currentCheckinId, status);
+  const modal = document.getElementById('review-modal');
+  const empId = modal.dataset.empId;
+  const taskType = modal.dataset.taskType;
+  const ptsMap = {'飲食打卡':1,'運動打卡':1,'健康飲食':2,'照片心得':5};
+  const pts = ptsMap[taskType] || 1;
+  await quickReview(currentCheckinId, status, empId, pts, taskType);
   closeModal();
 };
 
@@ -1180,7 +1210,7 @@ window.saveMakeup = async function() {
       isMakeup: true,
       makeupDate: date,
       makeupReason: reason||'主辦人補登',
-      createdAt: new Date()
+      createdAt: new Date(date + 'T12:00:00') // 用補登日期，避免影響其他日期的打卡狀態
     });
 
     // 2. 用真實的 checkin ID 呼叫 quickReview
@@ -1195,6 +1225,28 @@ window.saveMakeup = async function() {
     alert('補登失敗：' + e.message);
     console.error(e);
   }
+};
+
+window.openEditDateModal = function(checkinId, empName, taskType, seconds) {
+  document.getElementById('edit-date-checkin-id').value = checkinId;
+  const currentDate = seconds ? new Date(seconds*1000).toISOString().split('T')[0] : '';
+  document.getElementById('edit-date-info').textContent = `${empName} — ${taskType}　目前日期：${currentDate||'未知'}`;
+  document.getElementById('edit-date-value').value = currentDate;
+  document.getElementById('edit-date-modal').style.display = 'flex';
+};
+
+window.saveEditDate = async function() {
+  const checkinId = document.getElementById('edit-date-checkin-id').value;
+  const newDate = document.getElementById('edit-date-value').value;
+  if(!newDate) { alert('請選擇日期'); return; }
+  try {
+    await updateDoc(doc(db,'summer2026_checkins',checkinId), {
+      createdAt: new Date(newDate + 'T12:00:00')
+    });
+    alert('✅ 日期已修改！員工今天的按鈕恢復可上傳。');
+    document.getElementById('edit-date-modal').style.display = 'none';
+    loadCheckins();
+  } catch(e) { alert('修改失敗：'+e.message); }
 };
 
 window.addMember = async function() {
@@ -1219,6 +1271,37 @@ window.addMember = async function() {
     document.getElementById('new-emp-name').value='';
     loadMembers();
   } catch(e) { alert('新增失敗：'+e.message); }
+};
+
+window.recalcAllScores = async function() {
+  if(!confirm('確定要重新計算所有員工的積分嗎？\n這會根據所有「通過」的打卡紀錄重新計算，修復漏算問題。')) return;
+  try {
+    // 先把所有員工積分歸零（只清任務積分，保留 inbodyPts、rankPts）
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    for(const d of empSnap.docs) {
+      const data = d.data();
+      await updateDoc(d.ref, {
+        taskPts:0, totalPts:(data.inbodyPts||0)+(data.rankPts||0),
+        letters:[], weeklyDiet:0, weeklySport:0, weeklyHealth:0,
+        consecutiveDays:0, lastDietDate:'', jellyCount:0, lastWeek:-1,
+      });
+    }
+    // 重新執行所有通過的打卡紀錄
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const approved = checkSnap.docs
+      .map(d=>({id:d.id,...d.data()}))
+      .filter(d=>d.status==='通過' || d.status==='補登通過')
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+
+    let count = 0;
+    for(const checkin of approved) {
+      const ptsMap = {'飲食打卡':1,'運動打卡':1,'健康飲食':2,'照片心得':5};
+      const pts = ptsMap[checkin.taskType] || 1;
+      await quickReview(checkin.id, '通過', checkin.empId, pts, checkin.taskType);
+      count++;
+    }
+    alert(`✅ 重新計算完成！共處理 ${count} 筆通過紀錄`);
+  } catch(e) { alert('重新計算失敗：'+e.message); console.error(e); }
 };
 
 window.resetOne = async function() {
@@ -1315,6 +1398,8 @@ _$('nav-logout').addEventListener('click', adminLogout);
 _$('btn-reload-checkins').addEventListener('click', loadCheckins);
 _$('btn-reload-members').addEventListener('click', loadMembers);
 _$('btn-add-member').addEventListener('click', () => _$('add-member-modal').style.display='flex');
+_$('btn-save-edit-date').addEventListener('click', saveEditDate);
+_$('btn-close-edit-date').addEventListener('click', () => _$('edit-date-modal').style.display='none');
 _$('btn-save-new-member').addEventListener('click', addMember);
 _$('btn-close-add-member').addEventListener('click', () => _$('add-member-modal').style.display='none');
 _$('btn-reload-inbody').addEventListener('click', loadInbody);
@@ -1336,6 +1421,7 @@ _$('btn-close-change-group').addEventListener('click', () => _$('change-group-mo
 _$('btn-save-settings').addEventListener('click', saveSettings);
 _$('btn-retro-letters').addEventListener('click', retroLetters);
 _$('btn-reset-all').addEventListener('click', resetAll);
+_$('btn-recalc').addEventListener('click', recalcAllScores);
 
 // 編輯 Modal
 _$('btn-save-edit').addEventListener('click', saveEdit);
