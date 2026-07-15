@@ -247,9 +247,11 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <button class="btn btn-gold" id="btn-save-settings">💾 儲存設定</button>
           <button class="btn btn-primary" id="btn-retro-letters">🔤 補發所有員工字母</button>
           <button class="btn btn-red" id="btn-reset-all">🗑️ 重置所有員工積分</button>
-          <button class="btn btn-green" id="btn-recalc">🔍 重新計算所有積分</button>
+          <button class="btn btn-green" id="btn-recalc-preview">🔍 預覽重新計算</button>
+          <button class="btn btn-gold" id="btn-recalc-run" style="display:none">✅ 確認執行</button>
         </div>
-        <div style="font-size:11px;color:#8888aa;margin-top:8px">重新計算：針對所有「通過」的打卡紀錄重新計算積分，修復漏算問題</div>
+        <div style="font-size:11px;color:#8888aa;margin-top:8px">重新計算：根據所有「通過」打卡紀錄重新計算積分，先預覽確認再執行</div>
+        <div id="recalc-preview-area" style="display:none;margin-top:12px;background:#0a0a1e;border:1px solid #3a3a6a;border-radius:8px;padding:12px;max-height:300px;overflow-y:auto"></div>
       </div>
     </div>
 
@@ -1278,10 +1280,115 @@ window.addMember = async function() {
   } catch(e) { alert('新增失敗：'+e.message); }
 };
 
-window.recalcAllScores = async function() {
-  if(!confirm('確定要重新計算所有員工的積分嗎？\n這會根據所有「通過」的打卡紀錄重新計算，修復漏算問題。')) return;
+let recalcPreviewData = null;
+
+window.recalcPreview = async function() {
+  const area = document.getElementById('recalc-preview-area');
+  area.style.display = 'block';
+  area.innerHTML = '<div style="color:#aaaaff;font-size:12px">計算中，請稍候...</div>';
+  document.getElementById('btn-recalc-run').style.display = 'none';
+
   try {
-    // 先把所有員工積分歸零（只清任務積分，保留 inbodyPts、rankPts）
+    // 讀取所有員工和打卡紀錄
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const empMap = {};
+    empSnap.docs.forEach(d => { empMap[d.id] = {...d.data(), id:d.id}; });
+
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const approved = checkSnap.docs
+      .map(d=>({id:d.id,...d.data()}))
+      .filter(d=>d.status==='通過'||d.status==='補登通過')
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+
+    // 模擬計算（不寫入）
+    const simulated = {};
+    empSnap.docs.forEach(d => {
+      const data = d.data();
+      simulated[d.id] = {
+        empId: data.empId, name: data.name,
+        oldPts: data.totalPts||0,
+        newPts: (data.inbodyPts||0)+(data.rankPts||0),
+        taskPts: 0, weeklyDiet:0, weeklySport:0, weeklyHealth:0,
+        consecutiveDays:0, lastDietDate:'', lastWeek:-1, jellyCount:0,
+      };
+    });
+
+    const activityStart = new Date(settingsData.startDate || '2026-07-13');
+    const sportPtsMap = [1,1,3,1,1,3,0];
+
+    for(const c of approved) {
+      const s = simulated[c.empId];
+      if(!s) continue;
+      const uploadDate = c.createdAt?.seconds
+        ? new Date(c.createdAt.seconds*1000).toDateString()
+        : new Date().toDateString();
+      const uploadDateObj = new Date(uploadDate);
+      const daysSince = Math.floor((uploadDateObj-activityStart)/86400000);
+      const week = daysSince>=0 ? Math.floor(daysSince/7) : 0;
+      if(week > s.lastWeek) {
+        s.weeklyDiet=0; s.weeklySport=0; s.weeklyHealth=0; s.lastWeek=week;
+      }
+      let pts = 0;
+      if(c.taskType==='飲食打卡') {
+        pts=1; s.weeklyDiet++;
+        const yesterday = new Date(uploadDateObj.getTime()-86400000).toDateString();
+        if(s.lastDietDate===yesterday) s.consecutiveDays++;
+        else if(s.lastDietDate!==uploadDate) s.consecutiveDays=1;
+        s.lastDietDate=uploadDate;
+        if(s.consecutiveDays>0&&s.consecutiveDays%10===0&&s.jellyCount<4) s.jellyCount++;
+      } else if(c.taskType==='運動打卡') {
+        const idx=Math.min(s.weeklySport,6); pts=sportPtsMap[idx]; s.weeklySport++;
+      } else if(c.taskType==='健康飲食') {
+        s.weeklyHealth++;
+        if(s.weeklyHealth<=3) pts=0;
+        else if(s.weeklyHealth===4) pts=4;
+        else if(s.weeklyHealth<=7) pts=2;
+      } else if(c.taskType==='照片心得') { pts=5; }
+      s.taskPts+=pts; s.newPts+=pts;
+    }
+
+    // 顯示預覽結果
+    const changes = Object.values(simulated).filter(s=>s.oldPts!==s.newPts);
+    recalcPreviewData = simulated;
+
+    if(!changes.length) {
+      area.innerHTML = '<div style="color:#66cc66;font-size:12px">✅ 所有員工積分都正確，不需要調整！</div>';
+      return;
+    }
+
+    area.innerHTML = `
+      <div style="color:#ffd700;font-size:13px;font-weight:700;margin-bottom:8px">
+        預覽：將影響 ${changes.length} 位員工
+      </div>
+      <table style="width:100%;font-size:11px">
+        <tr style="color:#8888aa"><th>員工</th><th>目前積分</th><th>重算後</th><th>差異</th></tr>
+        ${changes.map(s=>`<tr>
+          <td>${s.name}（${s.empId}）</td>
+          <td style="text-align:center">${s.oldPts}</td>
+          <td style="text-align:center;color:#ffd700;font-weight:700">${s.newPts}</td>
+          <td style="text-align:center;color:${s.newPts>s.oldPts?'#66cc66':'#ff6666'}">${s.newPts>s.oldPts?'+':''}${s.newPts-s.oldPts}</td>
+        </tr>`).join('')}
+      </table>
+      <div style="color:#aaaaff;font-size:11px;margin-top:8px">確認無誤後點「✅ 確認執行」正式更新</div>
+    `;
+    document.getElementById('btn-recalc-run').style.display = 'inline-block';
+  } catch(e) {
+    area.innerHTML = `<div style="color:#ff6666;font-size:12px">預覽失敗：${e.message}</div>`;
+  }
+};
+
+window.recalcAllScores = async function() {
+  if(!recalcPreviewData) { alert('請先點「🔍 預覽重新計算」確認結果'); return; }
+  if(!confirm('確定要正式執行重新計算嗎？')) return;
+  const area = document.getElementById('recalc-preview-area');
+  area.innerHTML = '<div style="color:#aaaaff;font-size:12px">執行中，請稍候...</div>';
+  try {
+    // 實際寫入
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const approved = checkSnap.docs
+      .map(d=>({id:d.id,...d.data()}))
+      .filter(d=>d.status==='通過'||d.status==='補登通過')
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
     const empSnap = await getDocs(collection(db,'summer2026_employees'));
     for(const d of empSnap.docs) {
       const data = d.data();
@@ -1291,22 +1398,18 @@ window.recalcAllScores = async function() {
         consecutiveDays:0, lastDietDate:'', jellyCount:0, lastWeek:-1,
       });
     }
-    // 重新執行所有通過的打卡紀錄
-    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
-    const approved = checkSnap.docs
-      .map(d=>({id:d.id,...d.data()}))
-      .filter(d=>d.status==='通過' || d.status==='補登通過')
-      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
-
-    let count = 0;
-    for(const checkin of approved) {
-      const ptsMap = {'飲食打卡':1,'運動打卡':1,'健康飲食':2,'照片心得':5};
-      const pts = ptsMap[checkin.taskType] || 1;
-      await quickReview(checkin.id, '通過', checkin.empId, pts, checkin.taskType);
+    let count=0;
+    for(const c of approved) {
+      const ptsMap={'飲食打卡':1,'運動打卡':1,'健康飲食':2,'照片心得':5};
+      await quickReview(c.id,'通過',c.empId,ptsMap[c.taskType]||1,c.taskType);
       count++;
     }
-    alert(`✅ 重新計算完成！共處理 ${count} 筆通過紀錄`);
-  } catch(e) { alert('重新計算失敗：'+e.message); console.error(e); }
+    area.innerHTML=`<div style="color:#66cc66;font-size:13px;font-weight:700">✅ 完成！共重新計算 ${count} 筆打卡紀錄</div>`;
+    document.getElementById('btn-recalc-run').style.display='none';
+    recalcPreviewData=null;
+  } catch(e) {
+    area.innerHTML=`<div style="color:#ff6666;font-size:12px">執行失敗：${e.message}</div>`;
+  }
 };
 
 window.resetOne = async function() {
@@ -1426,7 +1529,8 @@ _$('btn-close-change-group').addEventListener('click', () => _$('change-group-mo
 _$('btn-save-settings').addEventListener('click', saveSettings);
 _$('btn-retro-letters').addEventListener('click', retroLetters);
 _$('btn-reset-all').addEventListener('click', resetAll);
-_$('btn-recalc').addEventListener('click', recalcAllScores);
+_$('btn-recalc-preview').addEventListener('click', recalcPreview);
+_$('btn-recalc-run').addEventListener('click', recalcAllScores);
 
 // 編輯 Modal
 _$('btn-save-edit').addEventListener('click', saveEdit);
