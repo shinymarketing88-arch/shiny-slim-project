@@ -676,7 +676,7 @@ const LEVELS = [
 let S = {
   empId:'', empName:'', group:'fat', charId:'', nickname:'',
   totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0,
-  targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0
+  targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0, weeklyHealth:0
 };
 let curScreen = 'login';
 let uploadTask = null;
@@ -1590,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('btn-logout').addEventListener('click', () => {
     if(unsubscribeListener) { unsubscribeListener(); unsubscribeListener = null; }
-    S = { empId:'', empName:'', group:'fat', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0, targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0 };
+    S = { empId:'', empName:'', group:'fat', charId:'', nickname:'', totalPts:0, taskPts:0, letters:[], consecutiveDays:0, jellyCount:0, jellyDelivered:0, targetVal:0, currentGap:0, target:'', weeklyDiet:0, weeklySport:0, weeklyHealth:0 };
     $('emp-inp').value = '';
     $('login-err').textContent = '';
     changingChar = false;
