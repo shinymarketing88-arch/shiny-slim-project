@@ -207,7 +207,11 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
 .upload-ok{background:#d4edda;border:1px solid #28a745;color:#155724;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:700;margin-top:10px;display:none}
 .modal-btns{display:flex;gap:8px;margin-top:12px}
 
-/* ── TEAM ── */
+.q-weekly{display:flex;align-items:center;gap:3px;margin-top:5px;flex-wrap:wrap}
+.q-dot{width:16px;height:16px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;border:1px solid var(--purple-border);background:var(--purple-pale);color:var(--text-light)}
+.q-dot.done{background:#d4edda;border-color:#28a745;color:#155724}
+.q-dot.combo{background:#fff3cd;border-color:#ffc107;color:#856404}
+.q-weekly-txt{font-size:10px;color:var(--purple-mid);margin-left:2px}
 .team-card{background:var(--white);border:1px solid var(--purple-border);border-radius:14px;padding:14px;margin:0 12px 10px;box-shadow:0 1px 3px rgba(108,99,255,.06)}
 .team-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .team-name{font-size:15px;font-weight:700;color:var(--purple-dark)}
@@ -375,6 +379,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-body">
             <div class="q-title">【今日熱量】飲食打卡</div>
             <div class="q-desc">上傳 WonderFood-AI 日統計截圖　每天+1分</div>
+            <div class="q-weekly" id="weekly-diet"></div>
           </div>
           <button class="q-btn todo" id="qbtn-diet">▶ 上傳</button>
         </div>
@@ -383,6 +388,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-body">
             <div class="q-title">【均衡滿分】健康達標</div>
             <div class="q-desc">週達4次+4分，第5-7次各+2分，最高10分</div>
+            <div class="q-weekly" id="weekly-health"></div>
           </div>
           <button class="q-btn todo" id="qbtn-health">▶ 上傳</button>
         </div>
@@ -391,6 +397,7 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
           <div class="q-body">
             <div class="q-title">【汗水閃耀】運動打卡</div>
             <div class="q-desc">週積分：1/1/3/1/1/3/0，第3、6次爆擊+3</div>
+            <div class="q-weekly" id="weekly-sport"></div>
           </div>
           <button class="q-btn todo" id="qbtn-sport">▶ 上傳</button>
         </div>
@@ -419,20 +426,6 @@ body{background:var(--bg);color:var(--text-dark);max-width:480px;margin:0 auto;p
             style="flex:1;padding:9px;background:#f59e0b;border-radius:9px;color:#fff;font-size:12px;font-weight:700;text-align:center;text-decoration:none">📋 填寫發文申請表單</a>
           <a href="https://docs.google.com/document/d/1qwvg30xo8fdvUyMfez8Y-4S-D2fOzbsbsJsLum_11PY/edit?tab=t.swjv0ze49grs" target="_blank"
             style="flex:1;padding:9px;background:#fff;border:1px solid #fcd34d;border-radius:9px;color:#92400e;font-size:12px;font-weight:700;text-align:center;text-decoration:none">📖 查看撰文說明</a>
-        </div>
-      </div>
-
-      <div class="sec-hd">每週副本</div>
-      <div class="weekly-card">
-        <div class="w-row">
-          <div class="w-lbl">飲食連續技</div>
-          <div class="w-slots" id="diet-slots"></div>
-          <div class="w-bonus dim" id="diet-bonus">第4次→+2</div>
-        </div>
-        <div class="w-row">
-          <div class="w-lbl">運動三連擊</div>
-          <div class="w-slots" id="sport-slots"></div>
-          <div class="w-bonus dim" id="sport-bonus">第3次→+3</div>
         </div>
       </div>
 
@@ -1231,36 +1224,46 @@ function renderJelly() {
 }
 
 function renderWeekly() {
-  const d = Math.min(S.weeklyHealth||0, 7);
+  const diet = Math.min(S.weeklyDiet||0, 7);
+  const health = Math.min(S.weeklyHealth||0, 7);
   const sp = Math.min(S.weeklySport||0, 7);
   const sportPtsMap = [1,1,3,1,1,3,0];
-  const sportEmoji = ['1️⃣','2️⃣','3️⃣','💥','5️⃣','💥','😴'];
 
-  // 均衡滿分：4格，前3格=待解鎖，第4格=滿分，超過顯示+2
-  $('diet-slots').innerHTML = Array(4).fill(0).map((_,i) => {
-    if(i < Math.min(d,3)) return `<div class="w-slot done">✓</div>`;
-    if(i === 3 && d >= 4) return `<div class="w-slot combo">🏅</div>`;
-    return `<div class="w-slot"></div>`;
-  }).join('') + (d > 4 ? `<div style="font-size:10px;color:var(--orange);font-weight:700;margin-left:4px">+${(d-4)*2}分</div>` : '');
+  const healthMsg = health === 0 ? '達4次解鎖+4分'
+    : health < 4 ? `還差 ${4-health} 次解鎖`
+    : health < 7 ? `已達標！第${health+1}次+2分`
+    : '本週已達最高分！';
+  const sportMsg = sp >= 7 ? '本週已達最高積分！休息也是訓練的一部分 💪'
+    : `本週第${sp+1}次 +${sportPtsMap[Math.min(sp,6)]}分`;
 
-  // 運動：7格，每格顯示該次積分
-  $('sport-slots').innerHTML = Array(7).fill(0).map((_,i) => {
-    if(i < sp) {
+  // 飲食打卡進度
+  const weeklyDietEl = $('weekly-diet');
+  if(weeklyDietEl) {
+    weeklyDietEl.innerHTML = Array(7).fill(0).map((_,i) =>
+      `<div class="q-dot ${i<diet?'done':''}">${i<diet?'✓':''}</div>`
+    ).join('') + `<span class="q-weekly-txt">本週 ${diet}/7 天</span>`;
+  }
+
+  // 均衡滿分進度
+  const weeklyHealthEl = $('weekly-health');
+  if(weeklyHealthEl) {
+    weeklyHealthEl.innerHTML = Array(7).fill(0).map((_,i) => {
+      if(i < health) return `<div class="q-dot ${i>=3?'combo':'done'}">${i>=3?'★':'✓'}</div>`;
+      if(i === 3) return `<div class="q-dot" style="font-size:8px">+4</div>`;
+      if(i >= 4) return `<div class="q-dot" style="font-size:8px">+2</div>`;
+      return `<div class="q-dot"></div>`;
+    }).join('') + `<span class="q-weekly-txt">${healthMsg}</span>`;
+  }
+
+  // 運動打卡進度
+  const weeklySportEl = $('weekly-sport');
+  if(weeklySportEl) {
+    weeklySportEl.innerHTML = Array(7).fill(0).map((_,i) => {
       const pts = sportPtsMap[i];
-      const cls = pts === 3 ? 'combo' : pts === 0 ? '' : 'done';
-      return `<div class="w-slot ${cls}" style="font-size:11px;font-weight:700">${pts === 0 ? '😴' : '+'+pts}</div>`;
-    }
-    return `<div class="w-slot" style="font-size:10px;color:var(--text-light)">${sportPtsMap[i]===0?'':'+'+(sportPtsMap[i]||'')}</div>`;
-  }).join('');
-
-  // 狀態提示
-  const dietMsg = d === 0 ? '達4次解鎖+4分' : d < 4 ? `還差 ${4-d} 次解鎖` : d < 7 ? `已達標！第${d+1}次+2分` : '本週已達最高分！';
-  const sportMsg = sp >= 7 ? '本週已達最高積分！休息也是訓練的一部分 💪' : `本週第${sp+1}次 +${sportPtsMap[Math.min(sp,6)]}分`;
-
-  $('diet-bonus').className = 'w-bonus' + (d >= 4 ? '' : ' dim');
-  $('diet-bonus').textContent = dietMsg;
-  $('sport-bonus').className = 'w-bonus' + (sp >= 7 ? '' : ' dim');
-  $('sport-bonus').textContent = sportMsg;
+      if(i < sp) return `<div class="q-dot ${pts===3?'combo':pts===0?'':'done'}">${pts===0?'😴':'+'+pts}</div>`;
+      return `<div class="q-dot" style="font-size:8px">${pts===0?'':'+'+pts}</div>`;
+    }).join('') + `<span class="q-weekly-txt">${sportMsg}</span>`;
+  }
 }
 
 // 各任務說明
