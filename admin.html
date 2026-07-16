@@ -249,8 +249,13 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <button class="btn btn-red" id="btn-reset-all">🗑️ 重置所有員工積分</button>
           <button class="btn btn-green" id="btn-recalc-preview">🔍 預覽重新計算</button>
           <button class="btn btn-gold" id="btn-recalc-run" style="display:none">✅ 確認執行</button>
+          <button class="btn btn-primary" id="btn-recalc-consecutive-preview">🔍 預覽連續天數</button>
+          <button class="btn btn-gold" id="btn-recalc-consecutive-run" style="display:none">✅ 確認執行</button>
         </div>
-        <div style="font-size:11px;color:#8888aa;margin-top:8px">重新計算：根據所有「通過」打卡紀錄重新計算積分，先預覽確認再執行</div>
+        <div style="font-size:11px;color:#8888aa;margin-top:8px">
+          重新計算：根據所有「通過」打卡紀錄重新計算積分，先預覽確認再執行<br>
+          重新計算連續天數：只根據飲食打卡歷史重算連續天數，<b style="color:#ff9944">不動積分</b>
+        </div>
         <div id="recalc-preview-area" style="display:none;margin-top:12px;background:#0a0a1e;border:1px solid #3a3a6a;border-radius:8px;padding:12px;max-height:300px;overflow-y:auto"></div>
       </div>
     </div>
@@ -500,7 +505,7 @@ window.loadCheckins = async function() {
           <td style="color:#8888aa;font-size:11px">${i.createdAt?.seconds ? new Date(i.createdAt.seconds*1000).toLocaleString('zh-TW') : '—'}</td>
           <td>${i.empName||''}<br><span style="font-size:10px;color:#8888aa">${i.empId||''}</span></td>
           <td>${i.taskType||''}</td>
-          <td>${i.fileUrl ? `<img class="img-thumb" src="${i.fileUrl}" onclick="openReview('${i.id}','${i.fileUrl}','${i.empName}','${i.taskType}')">` : '無截圖'}</td>
+          <td>${i.fileUrl ? `<img class="img-thumb" src="${i.fileUrl}" onclick="openReview('${i.id}','${i.fileUrl}','${i.empName}','${i.taskType}','${i.empId}')">` : '無截圖'}</td>
           <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
           <td style="display:flex;gap:4px;flex-wrap:wrap">
             ${i.status==='待審核'?`
@@ -515,12 +520,11 @@ window.loadCheckins = async function() {
   } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗：'+e.message+'</div>'; }
 };
 
-window.openReview = function(id, url, name, task) {
+window.openReview = function(id, url, name, task, empId) {
   currentCheckinId = id;
   document.getElementById('modal-img').src = url;
   document.getElementById('modal-title').textContent = `審核：${name} — ${task}`;
   document.getElementById('review-modal').classList.add('open');
-  // 儲存審核所需資料
   document.getElementById('review-modal').dataset.empId = empId || '';
   document.getElementById('review-modal').dataset.taskType = task || '';
 };
@@ -1280,6 +1284,119 @@ window.addMember = async function() {
   } catch(e) { alert('新增失敗：'+e.message); }
 };
 
+let consecutivePreviewData = null;
+
+window.recalcConsecutivePreview = async function() {
+  const area = document.getElementById('recalc-preview-area');
+  area.style.display = 'block';
+  area.innerHTML = '<div style="color:#aaaaff;font-size:12px">計算中，請稍候...</div>';
+  document.getElementById('btn-recalc-consecutive-run').style.display = 'none';
+
+  try {
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const dietCheckins = checkSnap.docs
+      .map(d=>({id:d.id,...d.data()}))
+      .filter(d=>(d.status==='通過'||d.status==='補登通過') && d.taskType==='飲食打卡')
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+
+    const byEmp = {};
+    dietCheckins.forEach(c => {
+      if(!byEmp[c.empId]) byEmp[c.empId] = [];
+      byEmp[c.empId].push(c);
+    });
+
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const empMap = {};
+    empSnap.docs.forEach(d => empMap[d.data().empId] = d.data());
+
+    const results = [];
+    for(const [empId, checkins] of Object.entries(byEmp)) {
+      let consecutive = 0, lastDate = '';
+      for(const c of checkins) {
+        const uploadDate = c.createdAt?.seconds
+          ? new Date(c.createdAt.seconds*1000).toDateString() : '';
+        if(!uploadDate) continue;
+        const yesterday = new Date(new Date(uploadDate).getTime()-86400000).toDateString();
+        if(lastDate === yesterday) consecutive++;
+        else if(lastDate !== uploadDate) consecutive = 1;
+        lastDate = uploadDate;
+      }
+      const jellyCount = Math.min(Math.floor(consecutive / 10), 4);
+      const emp = empMap[empId];
+      const oldConsecutive = emp?.consecutiveDays || 0;
+      const oldJelly = emp?.jellyCount || 0;
+      if(oldConsecutive !== consecutive || oldJelly !== jellyCount) {
+        results.push({
+          empId, name: emp?.name||empId,
+          oldConsecutive, newConsecutive: consecutive,
+          oldJelly, newJelly: jellyCount
+        });
+      }
+    }
+
+    consecutivePreviewData = { byEmp, empMap };
+
+    if(!results.length) {
+      area.innerHTML = '<div style="color:#66cc66;font-size:12px">✅ 所有員工連續天數都正確，不需要調整！</div>';
+      return;
+    }
+
+    area.innerHTML = `
+      <div style="color:#ffd700;font-size:13px;font-weight:700;margin-bottom:8px">
+        預覽：將影響 ${results.length} 位員工
+      </div>
+      <table style="width:100%;font-size:11px">
+        <tr style="color:#8888aa"><th>員工</th><th>連續天數(前)</th><th>連續天數(後)</th><th>馬甲果凍(前)</th><th>馬甲果凍(後)</th></tr>
+        ${results.map(r=>`<tr>
+          <td>${r.name}（${r.empId}）</td>
+          <td style="text-align:center">${r.oldConsecutive}</td>
+          <td style="text-align:center;color:#ffd700;font-weight:700">${r.newConsecutive}</td>
+          <td style="text-align:center">${r.oldJelly}</td>
+          <td style="text-align:center;color:${r.newJelly>r.oldJelly?'#66cc66':'#ff9944'}">${r.newJelly}</td>
+        </tr>`).join('')}
+      </table>
+      <div style="color:#aaaaff;font-size:11px;margin-top:8px">確認無誤後點「✅ 確認執行」正式更新（不動積分）</div>
+    `;
+    document.getElementById('btn-recalc-consecutive-run').style.display = 'inline-block';
+  } catch(e) {
+    area.innerHTML = `<div style="color:#ff6666;font-size:12px">預覽失敗：${e.message}</div>`;
+  }
+};
+
+window.recalcConsecutive = async function() {
+  if(!consecutivePreviewData) { alert('請先點「🔍 預覽連續天數」確認結果'); return; }
+  if(!confirm('確定要正式更新連續天數嗎？不會動積分。')) return;
+  const area = document.getElementById('recalc-preview-area');
+  area.innerHTML = '<div style="color:#aaaaff;font-size:12px">執行中...</div>';
+  try {
+    let count = 0;
+    for(const [empId, checkins] of Object.entries(consecutivePreviewData.byEmp)) {
+      let consecutive = 0, lastDate = '';
+      for(const c of checkins) {
+        const uploadDate = c.createdAt?.seconds
+          ? new Date(c.createdAt.seconds*1000).toDateString() : '';
+        if(!uploadDate) continue;
+        const yesterday = new Date(new Date(uploadDate).getTime()-86400000).toDateString();
+        if(lastDate === yesterday) consecutive++;
+        else if(lastDate !== uploadDate) consecutive = 1;
+        lastDate = uploadDate;
+      }
+      const jellyCount = Math.min(Math.floor(consecutive / 10), 4);
+      await updateDoc(doc(db,'summer2026_employees',empId), {
+        consecutiveDays: consecutive,
+        lastDietDate: lastDate,
+        jellyCount: jellyCount,
+      });
+      count++;
+    }
+    area.innerHTML = `<div style="color:#66cc66;font-size:13px;font-weight:700">✅ 完成！共更新 ${count} 位員工的連續天數</div>`;
+    document.getElementById('btn-recalc-consecutive-run').style.display = 'none';
+    consecutivePreviewData = null;
+  } catch(e) {
+    area.innerHTML = `<div style="color:#ff6666;font-size:12px">執行失敗：${e.message}</div>`;
+  }
+};
+
 let recalcPreviewData = null;
 
 window.recalcPreview = async function() {
@@ -1531,6 +1648,8 @@ _$('btn-retro-letters').addEventListener('click', retroLetters);
 _$('btn-reset-all').addEventListener('click', resetAll);
 _$('btn-recalc-preview').addEventListener('click', recalcPreview);
 _$('btn-recalc-run').addEventListener('click', recalcAllScores);
+_$('btn-recalc-consecutive-preview').addEventListener('click', recalcConsecutivePreview);
+_$('btn-recalc-consecutive-run').addEventListener('click', recalcConsecutive);
 
 // 編輯 Modal
 _$('btn-save-edit').addEventListener('click', saveEdit);
