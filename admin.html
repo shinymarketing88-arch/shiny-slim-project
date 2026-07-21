@@ -251,10 +251,12 @@ tr:hover td{background:rgba(255,255,255,0.02)}
           <button class="btn btn-gold" id="btn-recalc-run" style="display:none">✅ 確認執行</button>
           <button class="btn btn-primary" id="btn-recalc-consecutive-preview">🔍 預覽連續天數</button>
           <button class="btn btn-gold" id="btn-recalc-consecutive-run" style="display:none">✅ 確認執行</button>
+          <button class="btn btn-red" id="btn-reset-weekly">🔄 重置本週計數</button>
         </div>
         <div style="font-size:11px;color:#8888aa;margin-top:8px">
           重新計算：根據所有「通過」打卡紀錄重新計算積分，先預覽確認再執行<br>
-          重新計算連續天數：只根據飲食打卡歷史重算連續天數，<b style="color:#ff9944">不動積分</b>
+          重新計算連續天數：只根據飲食打卡歷史重算連續天數，<b style="color:#ff9944">不動積分</b><br>
+          重置本週計數：把所有員工的本週打卡次數歸零（每週一執行），<b style="color:#ff9944">不動積分</b>
         </div>
         <div id="recalc-preview-area" style="display:none;margin-top:12px;background:#0a0a1e;border:1px solid #3a3a6a;border-radius:8px;padding:12px;max-height:300px;overflow-y:auto"></div>
       </div>
@@ -585,9 +587,10 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
         : new Date().toDateString();
       const uploadDateObj = new Date(uploadDate);
 
-      // ── 1. 自動週重置：用上傳日期判斷是否跨週 ──
+      // ── 1. 自動週重置：用今天的日期判斷是否跨週（與上傳日期無關）──
       const activityStart = new Date(settingsData.startDate || '2026-07-13');
-      const daysSinceStart = Math.floor((uploadDateObj - activityStart) / 86400000);
+      const now = new Date();
+      const daysSinceStart = Math.floor((now - activityStart) / 86400000);
       const currentWeek = daysSinceStart >= 0 ? Math.floor(daysSinceStart / 7) : 0;
       const lastWeek = data.lastWeek ?? -1;
       const isNewWeek = daysSinceStart >= 0 && currentWeek > lastWeek;
@@ -1284,6 +1287,26 @@ window.addMember = async function() {
   } catch(e) { alert('新增失敗：'+e.message); }
 };
 
+window.resetWeekly = async function() {
+  if(!confirm('確定要重置所有員工的本週計數嗎？\n（weeklyDiet / weeklySport / weeklyHealth 歸零，積分不動）')) return;
+  try {
+    const activityStart = new Date(settingsData.startDate || '2026-07-13');
+    const now = new Date();
+    const daysSince = Math.floor((now - activityStart) / 86400000);
+    const currentWeek = daysSince >= 0 ? Math.floor(daysSince / 7) : 0;
+    const snap = await getDocs(collection(db,'summer2026_employees'));
+    let count = 0;
+    for(const d of snap.docs) {
+      await updateDoc(d.ref, {
+        weeklyDiet: 0, weeklySport: 0, weeklyHealth: 0,
+        lastWeek: currentWeek
+      });
+      count++;
+    }
+    alert(`✅ 完成！共重置 ${count} 位員工的本週計數`);
+  } catch(e) { alert('重置失敗：'+e.message); }
+};
+
 let consecutivePreviewData = null;
 
 window.recalcConsecutivePreview = async function() {
@@ -1427,10 +1450,18 @@ window.recalcPreview = async function() {
         newPts: (data.inbodyPts||0)+(data.rankPts||0),
         taskPts: 0, weeklyDiet:0, weeklySport:0, weeklyHealth:0,
         consecutiveDays:0, lastDietDate:'', lastWeek:-1, jellyCount:0,
+        // 詳細記錄
+        dietCount:0, dietPts:0,
+        sportCount:0, sportPts:0,
+        healthCount:0, healthPts:0,
+        photoPts:0,
+        sportDetail:[],  // 每次運動積分記錄
+        healthDetail:[], // 每次均衡積分記錄
       };
     });
 
     const activityStart = new Date(settingsData.startDate || '2026-07-13');
+    const now = new Date();
     const sportPtsMap = [1,1,3,1,1,3,0];
 
     for(const c of approved) {
@@ -1440,27 +1471,32 @@ window.recalcPreview = async function() {
         ? new Date(c.createdAt.seconds*1000).toDateString()
         : new Date().toDateString();
       const uploadDateObj = new Date(uploadDate);
-      const daysSince = Math.floor((uploadDateObj-activityStart)/86400000);
-      const week = daysSince>=0 ? Math.floor(daysSince/7) : 0;
+      // 週重置用今天日期
+      const nowDaysSince = Math.floor((now-activityStart)/86400000);
+      const week = nowDaysSince>=0 ? Math.floor(nowDaysSince/7) : 0;
       if(week > s.lastWeek) {
         s.weeklyDiet=0; s.weeklySport=0; s.weeklyHealth=0; s.lastWeek=week;
       }
       let pts = 0;
       if(c.taskType==='飲食打卡') {
-        pts=1; s.weeklyDiet++;
+        pts=1; s.weeklyDiet++; s.dietCount++; s.dietPts+=pts;
         const yesterday = new Date(uploadDateObj.getTime()-86400000).toDateString();
         if(s.lastDietDate===yesterday) s.consecutiveDays++;
         else if(s.lastDietDate!==uploadDate) s.consecutiveDays=1;
         s.lastDietDate=uploadDate;
         if(s.consecutiveDays>0&&s.consecutiveDays%10===0&&s.jellyCount<4) s.jellyCount++;
       } else if(c.taskType==='運動打卡') {
-        const idx=Math.min(s.weeklySport,6); pts=sportPtsMap[idx]; s.weeklySport++;
+        const idx=Math.min(s.weeklySport,6); pts=sportPtsMap[idx]; s.weeklySport++; s.sportCount++;
+        s.sportPts+=pts;
+        s.sportDetail.push(pts);
       } else if(c.taskType==='健康飲食') {
-        s.weeklyHealth++;
+        s.weeklyHealth++; s.healthCount++;
         if(s.weeklyHealth<=3) pts=0;
         else if(s.weeklyHealth===4) pts=4;
         else if(s.weeklyHealth<=7) pts=2;
-      } else if(c.taskType==='照片心得') { pts=5; }
+        s.healthPts+=pts;
+        s.healthDetail.push(pts);
+      } else if(c.taskType==='照片心得') { pts=5; s.photoPts=5; }
       s.taskPts+=pts; s.newPts+=pts;
     }
 
@@ -1477,14 +1513,29 @@ window.recalcPreview = async function() {
       <div style="color:#ffd700;font-size:13px;font-weight:700;margin-bottom:8px">
         預覽：將影響 ${changes.length} 位員工
       </div>
-      <table style="width:100%;font-size:11px">
-        <tr style="color:#8888aa"><th>員工</th><th>目前積分</th><th>重算後</th><th>差異</th></tr>
-        ${changes.map(s=>`<tr>
-          <td>${s.name}（${s.empId}）</td>
-          <td style="text-align:center">${s.oldPts}</td>
-          <td style="text-align:center;color:#ffd700;font-weight:700">${s.newPts}</td>
-          <td style="text-align:center;color:${s.newPts>s.oldPts?'#66cc66':'#ff6666'}">${s.newPts>s.oldPts?'+':''}${s.newPts-s.oldPts}</td>
-        </tr>`).join('')}
+      <table style="width:100%;font-size:11px;border-collapse:collapse">
+        <tr style="color:#8888aa;border-bottom:1px solid #3a3a6a">
+          <th style="padding:4px;text-align:left">員工</th>
+          <th style="padding:4px;text-align:center">目前</th>
+          <th style="padding:4px;text-align:center">重算後</th>
+          <th style="padding:4px;text-align:center">差異</th>
+          <th style="padding:4px;text-align:left">分數來源說明</th>
+        </tr>
+        ${changes.map(s=>{
+          const breakdown = [];
+          if(s.dietCount>0) breakdown.push(`🥗飲食${s.dietCount}次+${s.dietPts}分`);
+          if(s.sportCount>0) breakdown.push(`🏋️運動${s.sportCount}次+${s.sportPts}分（${s.sportDetail.map((p,i)=>`第${i+1}次+${p}`).join('、')}）`);
+          if(s.healthCount>0) breakdown.push(`🏅均衡${s.healthCount}次+${s.healthPts}分${s.healthCount<4?' (未達4次門檻)':''}`);
+          if(s.photoPts>0) breakdown.push(`📸照片+5分`);
+          const diff = s.newPts-s.oldPts;
+          return `<tr style="border-bottom:1px solid #2a2a4a">
+            <td style="padding:5px">${s.name}<br><span style="color:#8888aa;font-size:10px">${s.empId}</span></td>
+            <td style="padding:5px;text-align:center">${s.oldPts}</td>
+            <td style="padding:5px;text-align:center;color:#ffd700;font-weight:700">${s.newPts}</td>
+            <td style="padding:5px;text-align:center;color:${diff>0?'#66cc66':diff<0?'#ff6666':'#888888'};font-weight:700">${diff>0?'+':''}${diff}</td>
+            <td style="padding:5px;font-size:10px;color:#aaaacc">${breakdown.join('<br>')}</td>
+          </tr>`;
+        }).join('')}
       </table>
       <div style="color:#aaaaff;font-size:11px;margin-top:8px">確認無誤後點「✅ 確認執行」正式更新</div>
     `;
@@ -1650,6 +1701,7 @@ _$('btn-recalc-preview').addEventListener('click', recalcPreview);
 _$('btn-recalc-run').addEventListener('click', recalcAllScores);
 _$('btn-recalc-consecutive-preview').addEventListener('click', recalcConsecutivePreview);
 _$('btn-recalc-consecutive-run').addEventListener('click', recalcConsecutive);
+_$('btn-reset-weekly').addEventListener('click', resetWeekly);
 
 // 編輯 Modal
 _$('btn-save-edit').addEventListener('click', saveEdit);
