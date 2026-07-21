@@ -708,7 +708,10 @@ const toast = msg => {
 function showScreen(name) {
   document.querySelectorAll('.scr').forEach(s => s.classList.remove('on'));
   $(`scr-${name}`).classList.add('on');
+  // 手機上確保滾到頂部
   $('scroll').scrollTop = 0;
+  window.scrollTo(0, 0);
+  document.body.scrollTop = 0;
   curScreen = name;
   const stepScreens = ['group','nick','inbody'];
   const mainScreens = ['main','profile'];
@@ -747,7 +750,16 @@ async function doLogin() {
       renderMain();
       startRealtimeListener();
     } else {
+      // 新用戶：顯示短暫成功提示再跳轉
+      btn.textContent = '✅ 驗證成功！';
+      btn.style.background = '#10b981';
+      await new Promise(r => setTimeout(r, 600));
       showScreen('group');
+      // 確保手機鍵盤收起後頁面置頂
+      setTimeout(() => {
+        $('scroll').scrollTop = 0;
+        window.scrollTo(0, 0);
+      }, 100);
       renderCharGrid(S.group || 'fat');
       updateGroupTabs(S.group || 'fat');
     }
@@ -757,6 +769,7 @@ async function doLogin() {
   } finally {
     btn.textContent = '▶ START GAME';
     btn.disabled = false;
+    btn.style.background = '';
   }
 }
 
@@ -1223,10 +1236,22 @@ function renderJelly() {
   }).join('');
 }
 
+function getCurrentWeek() {
+  const activityStart = new Date('2026-07-13');
+  const now = new Date();
+  const daysSince = Math.floor((now - activityStart) / 86400000);
+  return daysSince >= 0 ? Math.floor(daysSince / 7) : 0;
+}
+
 function renderWeekly() {
-  const diet = Math.min(S.weeklyDiet||0, 7);
-  const health = Math.min(S.weeklyHealth||0, 7);
-  const sp = Math.min(S.weeklySport||0, 7);
+  // 前台自動判斷是否跨週，跨週就顯示0（不寫入Firebase，只影響顯示）
+  const currentWeek = getCurrentWeek();
+  const lastWeek = S.lastWeek ?? -1;
+  const isNewWeek = currentWeek > lastWeek;
+
+  const diet   = isNewWeek ? 0 : Math.min(S.weeklyDiet||0, 7);
+  const health = isNewWeek ? 0 : Math.min(S.weeklyHealth||0, 7);
+  const sp     = isNewWeek ? 0 : Math.min(S.weeklySport||0, 7);
   const sportPtsMap = [1,1,3,1,1,3,0];
 
   const healthMsg = health === 0 ? '達4次解鎖+4分'
