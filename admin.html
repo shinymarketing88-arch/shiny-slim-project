@@ -1202,8 +1202,9 @@ window.runAudit = async function() {
     allCheckins.forEach(c=>{
       const s = calc[c.empId];
       if(!s) return;
-      const nowDs = Math.floor((now-activityStart)/86400000);
-      const wk = nowDs>=0 ? Math.floor(nowDs/7) : 0;
+      const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000) : new Date();
+      const ds = Math.floor((uploadDate-activityStart)/86400000);
+      const wk = ds>=0 ? Math.floor(ds/7) : 0;
       if(wk > s.lastWk) { s.weeklyS=0; s.weeklyH=0; s.weeklyHC=0; s.lastWk=wk; }
       let pts=0;
       if(c.taskType==='飲食打卡') pts=1;
@@ -1270,8 +1271,8 @@ window.fixOneEmployee = async function(empId) {
     checkins.forEach(c=>{
       const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000).toDateString() : '';
       const uploadDateObj = new Date(uploadDate);
-      const nowDs = Math.floor((now-activityStart)/86400000);
-      const wk = nowDs>=0 ? Math.floor(nowDs/7) : 0;
+      const ds = Math.floor((uploadDateObj-activityStart)/86400000);
+      const wk = ds>=0 ? Math.floor(ds/7) : 0;
       if(wk > lastWk) { weeklyD=0; weeklyS=0; weeklyH=0; weeklyHC=0; lastWk=wk; }
       let pts=0;
       if(c.taskType==='飲食打卡') {
