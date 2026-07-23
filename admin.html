@@ -72,6 +72,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="login-title">⚔ ShapeShifter</div>
     <div class="login-sub">主辦人後台管理系統</div>
     <input type="password" id="admin-pw" placeholder="請輸入管理員密碼" />
+    <input type="text" id="admin-operator" placeholder="操作員編號（如 SM0001）" style="margin-top:8px;text-transform:uppercase" />
     <div class="err" id="pw-err"></div>
     <button class="btn btn-primary btn-full" id="btn-admin-login">登入後台</button>
   </div>
@@ -89,6 +90,8 @@ tr:hover td{background:rgba(255,255,255,0.02)}
     <div class="nav-item" id="nav-completion">🎁 完賽禮名單</div>
     <div class="nav-item" id="nav-spell">🎉 拼字獎勵名單</div>
     <div class="nav-item" id="nav-teams">👥 隊伍管理</div>
+    <div class="nav-item" id="nav-report">📊 週報表</div>
+    <div class="nav-item" id="nav-audit">📋 積分稽核</div>
     <div class="nav-item" id="nav-settings">⚙️ 活動設定</div>
     <div class="nav-item" style="margin-top:auto;position:absolute;bottom:1rem;left:0;right:0" id="nav-logout">🚪 登出</div>
   </div>
@@ -233,6 +236,26 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         <button class="btn btn-sm btn-primary" id="btn-reload-teams">🔄 重新載入</button>
       </div>
       <div id="teams-table"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 週報表 -->
+    <div class="page" id="page-report">
+      <div class="page-title">📊 週報表</div>
+      <div class="filter-row">
+        <select id="report-week-select"></select>
+        <button class="btn btn-sm btn-primary" id="btn-reload-report">🔄 載入</button>
+        <button class="btn btn-sm btn-gold" id="btn-export-report">📥 匯出 Excel</button>
+      </div>
+      <div id="report-table"><div class="loading">選擇週數後載入</div></div>
+    </div>
+
+    <!-- 積分稽核 -->
+    <div class="page" id="page-audit">
+      <div class="page-title">📋 積分稽核</div>
+      <div class="filter-row">
+        <button class="btn btn-sm btn-primary" id="btn-run-audit">🔍 執行稽核</button>
+      </div>
+      <div id="audit-table"><div class="loading">點「執行稽核」開始檢查</div></div>
     </div>
 
     <!-- 活動設定 -->
@@ -428,13 +451,24 @@ const db = getFirestore(app);
 const ADMIN_PASSWORD = 'shiny2026admin';
 let currentCheckinId = null;
 let settingsData = {};
+let adminOperator = '';
 
-window.adminLogin = function() {
+window.adminLogin = async function() {
   const pw = document.getElementById('admin-pw').value;
+  adminOperator = (document.getElementById('admin-operator').value||'').trim().toUpperCase();
   if(pw !== ADMIN_PASSWORD) {
     document.getElementById('pw-err').textContent = '密碼錯誤';
     return;
   }
+  if(!adminOperator) {
+    document.getElementById('pw-err').textContent = '請輸入操作員編號';
+    return;
+  }
+  // 載入設定
+  try {
+    const sSnap = await getDoc(doc(db, 'summer2026_settings', 'main'));
+    if(sSnap.exists()) settingsData = sSnap.data();
+  } catch(e) { console.error('載入設定失敗', e); }
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-wrap').style.display = 'block';
   loadDashboard();
@@ -460,6 +494,8 @@ window.showPage = function(page) {
   if(page==='completion') loadCompletion();
   if(page==='spell') loadSpell();
   if(page==='teams') loadTeams();
+  if(page==='report') { initReportWeekSelect(); loadReport(); }
+  if(page==='audit') {}  // 手動點按鈕才執行
 };
 
 async function loadDashboard() {
@@ -501,23 +537,38 @@ window.loadCheckins = async function() {
     items.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
     if(items.length === 0) { wrap.innerHTML = '<div class="loading">無資料</div>'; return; }
     wrap.innerHTML = `<table>
-      <tr><th>時間</th><th>員工</th><th>任務</th><th>截圖</th><th>狀態</th><th>操作</th></tr>
-      ${items.map(i => `
+      <tr><th>時間</th><th>員工</th><th>任務</th><th>截圖</th><th>狀態</th><th>給分</th><th>操作</th></tr>
+      ${items.map(i => {
+        // 給分顯示
+        let ptsDisplay = '';
+        if(i.status==='通過'||i.status==='補登通過') {
+          if(i.earnedPts !== undefined) {
+            ptsDisplay = `<span style="color:#ffd700;font-weight:700">+${i.earnedPts}分</span>`;
+          } else {
+            ptsDisplay = `<span style="color:#888;font-size:10px">未記錄</span>`;
+          }
+        } else if(i.status==='待審核') {
+          ptsDisplay = '<span style="color:#8888aa">待審核</span>';
+        } else {
+          ptsDisplay = '—';
+        }
+        return `
         <tr>
           <td style="color:#8888aa;font-size:11px">${i.createdAt?.seconds ? new Date(i.createdAt.seconds*1000).toLocaleString('zh-TW') : '—'}</td>
           <td>${i.empName||''}<br><span style="font-size:10px;color:#8888aa">${i.empId||''}</span></td>
           <td>${i.taskType||''}</td>
           <td>${i.fileUrl ? `<img class="img-thumb" src="${i.fileUrl}" onclick="openReview('${i.id}','${i.fileUrl}','${i.empName}','${i.taskType}','${i.empId}')">` : '無截圖'}</td>
-          <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
-          <td style="display:flex;gap:4px;flex-wrap:wrap">
+          <td><span class="badge ${i.status==='待審核'?'badge-pending':i.status==='通過'||i.status==='補登通過'?'badge-approved':'badge-rejected'}">${i.status}</span></td>
+          <td>${ptsDisplay}</td>
+          <td style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;min-height:40px">
             ${i.status==='待審核'?`
               <button class="btn btn-sm btn-green" onclick="quickReview('${i.id}','通過','${i.empId}',${i.pts||0},'${i.taskType||''}')">✅</button>
               <button class="btn btn-sm btn-red" onclick="quickReview('${i.id}','駁回','${i.empId}',${i.pts||0},'${i.taskType||''}')">❌</button>
             `:''}
             <button class="btn btn-sm btn-primary" onclick="openEditDateModal('${i.id}','${i.empName}','${i.taskType}',${i.createdAt?.seconds||0})">📅</button>
           </td>
-        </tr>
-      `).join('')}
+        </tr>`;
+      }).join('')}
     </table>`;
   } catch(e) { wrap.innerHTML = '<div class="loading" style="color:#ff6666">載入失敗：'+e.message+'</div>'; }
 };
@@ -567,7 +618,29 @@ function getRandomLetter(currentLetters) {
 window.quickReview = async function(id, status, empId, pts, taskType) {
   try {
     const ref = doc(db, 'summer2026_checkins', id);
-    await updateDoc(ref, { status, reviewedAt: new Date() });
+
+    // ── 防呆：審核通過前檢查當天同任務是否已有通過 ──
+    if(status === '通過' && empId && taskType) {
+      const checkinSnap0 = await getDoc(ref);
+      const cData0 = checkinSnap0.data();
+      const uploadDate0 = cData0?.createdAt?.seconds
+        ? new Date(cData0.createdAt.seconds*1000).toDateString() : new Date().toDateString();
+      const allSnap = await getDocs(collection(db,'summer2026_checkins'));
+      const dupCheck = allSnap.docs.filter(d => {
+        const dd = d.data();
+        return dd.empId===empId && dd.taskType===taskType && dd.status==='通過'
+          && dd.createdAt?.seconds
+          && new Date(dd.createdAt.seconds*1000).toDateString()===uploadDate0
+          && d.id !== id;
+      });
+      if(dupCheck.length > 0) {
+        alert(`⚠️ ${empId} 在 ${uploadDate0} 已有一筆「${taskType}」通過，不可重複審核通過！`);
+        loadCheckins();
+        return;
+      }
+    }
+
+    await updateDoc(ref, { status, reviewedAt: new Date(), reviewedBy: adminOperator });
 
     if(!empId) { loadCheckins(); return; }
 
@@ -687,6 +760,10 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
     }
 
     await updateDoc(empRef, updates);
+    // 寫入實際給分到打卡紀錄
+    if(status === '通過') {
+      await updateDoc(ref, { earnedPts: earnedPts, scoredBy: adminOperator });
+    }
     loadCheckins();
   } catch(e) {
     alert('操作失敗：' + e.message);
@@ -986,6 +1063,241 @@ function downloadCSV(rows, filename) {
   a.click();
 }
 
+window.loadReport = async function() {
+  const weekSel = document.getElementById('report-week-select');
+  const wrap = document.getElementById('report-table');
+  const selectedWeek = parseInt(weekSel.value);
+  wrap.innerHTML = '<div class="loading">載入中...</div>';
+  try {
+    const activityStart = new Date(settingsData.startDate||'2026-07-13');
+    const sportPtsMap = [1,1,3,1,1,3,0];
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const allCheckins = checkSnap.docs.map(d=>d.data())
+      .filter(d=>(d.status==='通過'||d.status==='補登通過'));
+
+    // 按員工按週計算
+    const empData = {};
+    empSnap.docs.forEach(d=>{const dd=d.data(); if(dd.group) empData[dd.empId]={...dd, weeks:{}};});
+    allCheckins.forEach(c=>{
+      if(!empData[c.empId]) return;
+      const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000) : new Date();
+      const ds = Math.floor((uploadDate-activityStart)/86400000);
+      const wk = ds>=0 ? Math.floor(ds/7) : 0;
+      if(!empData[c.empId].weeks[wk]) empData[c.empId].weeks[wk]={diet:0,sport:0,sportCnt:0,health:0,healthCnt:0,photo:0};
+      const w = empData[c.empId].weeks[wk];
+      if(c.taskType==='飲食打卡') w.diet++;
+      else if(c.taskType==='運動打卡') { w.sport+=sportPtsMap[Math.min(w.sportCnt,6)]; w.sportCnt++; }
+      else if(c.taskType==='健康飲食') { w.healthCnt++; if(w.healthCnt===4)w.health+=4; else if(w.healthCnt>4&&w.healthCnt<=7)w.health+=2; }
+      else if(c.taskType==='照片心得') w.photo=5;
+    });
+
+    const items = Object.values(empData).sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+    if(selectedWeek === -1) {
+      // 全部週數
+      const now = new Date();
+      const maxWeek = Math.floor((now-activityStart)/86400000/7);
+      const weekNums = Array.from({length:maxWeek+1},(_,i)=>i);
+      const fmt = w => { const s=new Date(activityStart.getTime()+w*7*86400000); return `${s.getMonth()+1}/${s.getDate()}`; };
+      wrap.innerHTML = `<div style="overflow-x:auto"><table style="font-size:11px">
+        <tr><th>員工</th><th>組別</th>${weekNums.map(w=>`<th colspan="4" style="background:#2a2a4a;color:#ffd700">W${w+1} ${fmt(w)}</th>`).join('')}<th style="background:#6D28D9;color:#fff">總計</th></tr>
+        <tr><th></th><th></th>${weekNums.map(()=>`<th>🥗</th><th>🏋️</th><th>🏅</th><th>小計</th>`).join('')}<th></th></tr>
+        ${items.map(i=>{
+          let total=0;
+          return `<tr>
+            <td>${i.name}<br><span style="color:#888;font-size:9px">${i.empId}</span></td>
+            <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減':'增'}</span></td>
+            ${weekNums.map(w=>{
+              const wd=i.weeks[w]||{diet:0,sport:0,health:0,photo:0};
+              const sub=wd.diet+wd.sport+wd.health+wd.photo; total+=sub;
+              return `<td>${wd.diet||'-'}</td><td>${wd.sport||'-'}</td><td>${wd.health||'-'}</td><td style="font-weight:700;color:#ffd700">${sub||'-'}</td>`;
+            }).join('')}
+            <td style="font-weight:700;color:#ffd700;font-size:13px">${total}</td>
+          </tr>`;
+        }).join('')}
+      </table></div>`;
+    } else {
+      // 單一週
+      const ws = new Date(activityStart.getTime()+selectedWeek*7*86400000);
+      const we = new Date(ws.getTime()+6*86400000);
+      const fmt = d => `${d.getMonth()+1}/${d.getDate()}`;
+      wrap.innerHTML = `<table>
+        <tr><th>員工</th><th>組別</th><th>🥗飲食</th><th>🏋️運動</th><th>🏅均衡</th><th>本週得分</th><th>累計總分</th><th>連續天</th></tr>
+        ${items.map(i=>{
+          const w=i.weeks[selectedWeek]||{diet:0,sport:0,health:0,sportCnt:0,healthCnt:0,photo:0};
+          const weekPts=w.diet+w.sport+w.health+w.photo;
+          return `<tr>
+            <td>${i.name}<br><span style="color:#888;font-size:10px">${i.empId}</span></td>
+            <td><span class="badge ${i.group==='fat'?'badge-fat':'badge-muscle'}">${i.group==='fat'?'減脂':'增肌'}</span></td>
+            <td>${w.diet}/7</td><td>${w.sportCnt}次+${w.sport}分</td><td>${w.healthCnt}次+${w.health}分</td>
+            <td style="color:#ffd700;font-weight:700">+${weekPts}</td>
+            <td style="font-weight:700">${i.totalPts||0}</td>
+            <td>${i.consecutiveDays||0}天</td>
+          </tr>`;
+        }).join('')}
+      </table>`;
+    }
+  } catch(e) { wrap.innerHTML='<div class="loading" style="color:#ff6666">載入失敗：'+e.message+'</div>'; }
+};
+
+window.initReportWeekSelect = function() {
+  const sel = document.getElementById('report-week-select');
+  const activityStart = new Date(settingsData.startDate||'2026-07-13');
+  const now = new Date();
+  const maxWeek = Math.max(0, Math.floor((now-activityStart)/86400000/7));
+  const fmt = w => { const s=new Date(activityStart.getTime()+w*7*86400000); const e=new Date(s.getTime()+6*86400000); return `${s.getMonth()+1}/${s.getDate()}-${e.getMonth()+1}/${e.getDate()}`; };
+  sel.innerHTML = `<option value="-1">全部週數（總覽）</option>` +
+    Array.from({length:maxWeek+1},(_,i)=>`<option value="${i}">第${i+1}週（${fmt(i)}）</option>`).join('');
+};
+
+window.exportReport = async function() {
+  // 觸發載入並匯出
+  const weekSel = document.getElementById('report-week-select');
+  const table = document.querySelector('#report-table table');
+  if(!table) { alert('請先載入報表'); return; }
+  const rows = [...table.querySelectorAll('tr')].map(tr=>
+    [...tr.querySelectorAll('td,th')].map(td=>td.textContent.trim())
+  );
+  const bom = '\uFEFF';
+  const csv = bom + rows.map(r=>r.map(c=>`"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `週報表_${new Date().toLocaleDateString('zh-TW').replace(/\//g,'-')}.csv`;
+  a.click();
+};
+
+window.runAudit = async function() {
+  const wrap = document.getElementById('audit-table');
+  wrap.innerHTML = '<div class="loading">稽核中...</div>';
+  try {
+    const activityStart = new Date(settingsData.startDate||'2026-07-13');
+    const sportPtsMap = [1,1,3,1,1,3,0];
+    const now = new Date();
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const allCheckins = checkSnap.docs.map(d=>({id:d.id,...d.data()}))
+      .filter(d=>(d.status==='通過'||d.status==='補登通過'));
+
+    // 重算每人積分
+    const calc = {};
+    empSnap.docs.forEach(d=>{const dd=d.data(); calc[dd.empId]={...dd, recalcPts:0, weeklyS:0, weeklyH:0, weeklyHC:0, lastWk:-1, issues:[]};});
+
+    // 檢查同天多筆通過
+    const byEmpDateTask = {};
+    allCheckins.forEach(c=>{
+      const dt = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000).toDateString() : '';
+      const key = `${c.empId}_${dt}_${c.taskType}`;
+      if(!byEmpDateTask[key]) byEmpDateTask[key]=[];
+      byEmpDateTask[key].push(c);
+    });
+    Object.entries(byEmpDateTask).forEach(([key,arr])=>{
+      if(arr.length>1 && calc[arr[0].empId]) {
+        calc[arr[0].empId].issues.push(`🔴 ${key.split('_')[1]} ${arr[0].taskType} 有${arr.length}筆通過`);
+      }
+    });
+
+    // 重算積分
+    allCheckins.sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    allCheckins.forEach(c=>{
+      const s = calc[c.empId];
+      if(!s) return;
+      const nowDs = Math.floor((now-activityStart)/86400000);
+      const wk = nowDs>=0 ? Math.floor(nowDs/7) : 0;
+      if(wk > s.lastWk) { s.weeklyS=0; s.weeklyH=0; s.weeklyHC=0; s.lastWk=wk; }
+      let pts=0;
+      if(c.taskType==='飲食打卡') pts=1;
+      else if(c.taskType==='運動打卡') { pts=sportPtsMap[Math.min(s.weeklyS,6)]; s.weeklyS++; }
+      else if(c.taskType==='健康飲食') { s.weeklyHC++; if(s.weeklyHC===4)pts=4; else if(s.weeklyHC>4&&s.weeklyHC<=7)pts=2; }
+      else if(c.taskType==='照片心得') pts=5;
+      s.recalcPts += pts;
+    });
+
+    // 比較
+    const results = Object.values(calc).filter(s=>s.group);
+    const issues = results.filter(s=>s.recalcPts!==(s.totalPts||0)||s.issues.length>0);
+    const correct = results.length - issues.length;
+
+    wrap.innerHTML = `
+      <div style="display:flex;gap:12px;margin-bottom:12px">
+        <div style="flex:1;background:#1a2a1a;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:#66cc66">✅ ${correct}</div>
+          <div style="font-size:11px;color:#8888aa">積分正確</div>
+        </div>
+        <div style="flex:1;background:#2a1a1a;border-radius:8px;padding:12px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:#ff6666">⚠️ ${issues.length}</div>
+          <div style="font-size:11px;color:#8888aa">有差異或異常</div>
+        </div>
+      </div>
+      ${issues.length ? `<table>
+        <tr><th>員工</th><th>目前</th><th>應得</th><th>差異</th><th>異常</th><th>操作</th></tr>
+        ${issues.map(s=>{
+          const diff = s.recalcPts-(s.totalPts||0);
+          return `<tr>
+            <td>${s.name}<br><span style="color:#888;font-size:10px">${s.empId}</span></td>
+            <td style="text-align:center">${s.totalPts||0}</td>
+            <td style="text-align:center;color:#ffd700;font-weight:700">${s.recalcPts}</td>
+            <td style="text-align:center;color:${diff>0?'#66cc66':diff<0?'#ff6666':'#888'};font-weight:700">${diff>0?'+':''}${diff}</td>
+            <td style="font-size:10px;color:#ff9944">${s.issues.join('<br>')||'積分不一致'}</td>
+            <td><button class="btn btn-sm btn-gold" onclick="fixOneEmployee('${s.empId}')">🔧 修正此人</button></td>
+          </tr>`;
+        }).join('')}
+      </table>` : '<div style="text-align:center;color:#66cc66;font-size:14px;padding:20px">🎉 所有員工積分都正確！</div>'}
+    `;
+  } catch(e) { wrap.innerHTML='<div class="loading" style="color:#ff6666">稽核失敗：'+e.message+'</div>'; }
+};
+
+window.fixOneEmployee = async function(empId) {
+  // 先檢查有沒有手動修改紀錄
+  const empSnap = await getDoc(doc(db,'summer2026_employees',empId));
+  const empData = empSnap.data();
+  const logs = empData?.adminLogs || [];
+  let msg = `確定要重新計算 ${empData.name}（${empId}）的積分嗎？`;
+  if(logs.length > 0) {
+    msg += `\n\n⚠️ 此員工有 ${logs.length} 筆手動修改紀錄：\n${logs.slice(-3).join('\n')}\n\n重算會覆蓋手動修改的值。`;
+  }
+  if(!confirm(msg)) return;
+  try {
+    const activityStart = new Date(settingsData.startDate||'2026-07-13');
+    const sportPtsMap = [1,1,3,1,1,3,0];
+    const now = new Date();
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const checkins = checkSnap.docs.map(d=>d.data())
+      .filter(d=>d.empId===empId&&(d.status==='通過'||d.status==='補登通過'))
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    let taskPts=0, weeklyD=0, weeklyS=0, weeklyH=0, weeklyHC=0, lastWk=-1;
+    let consecutive=0, lastDietDate='', jellyCount=0;
+    checkins.forEach(c=>{
+      const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000).toDateString() : '';
+      const uploadDateObj = new Date(uploadDate);
+      const nowDs = Math.floor((now-activityStart)/86400000);
+      const wk = nowDs>=0 ? Math.floor(nowDs/7) : 0;
+      if(wk > lastWk) { weeklyD=0; weeklyS=0; weeklyH=0; weeklyHC=0; lastWk=wk; }
+      let pts=0;
+      if(c.taskType==='飲食打卡') {
+        pts=1; weeklyD++;
+        const yesterday = new Date(uploadDateObj.getTime()-86400000).toDateString();
+        if(lastDietDate===yesterday) consecutive++;
+        else if(lastDietDate!==uploadDate) consecutive=1;
+        lastDietDate=uploadDate;
+        if(consecutive>0&&consecutive%10===0&&jellyCount<4) jellyCount++;
+      } else if(c.taskType==='運動打卡') { pts=sportPtsMap[Math.min(weeklyS,6)]; weeklyS++; }
+      else if(c.taskType==='健康飲食') { weeklyHC++; weeklyH=weeklyHC>=4?4+Math.min(weeklyHC-4,3)*2:0; if(weeklyHC===4)pts=4; else if(weeklyHC>4&&weeklyHC<=7)pts=2; }
+      else if(c.taskType==='照片心得') pts=5;
+      taskPts+=pts;
+    });
+    await updateDoc(doc(db,'summer2026_employees',empId), {
+      taskPts, totalPts: taskPts+(empData.inbodyPts||0)+(empData.rankPts||0),
+      weeklyDiet:weeklyD, weeklySport:weeklyS, weeklyHealth:weeklyHC,
+      consecutiveDays:consecutive, lastDietDate, jellyCount,
+      lastWeek: Math.max(0, Math.floor((now-activityStart)/86400000/7)),
+      adminLogs: [...(empData.adminLogs||[]), `${new Date().toLocaleString('zh-TW')} ${adminOperator}：🔧 自動重算積分 ${empData.totalPts||0}→${taskPts+(empData.inbodyPts||0)+(empData.rankPts||0)}`],
+    });
+    alert(`✅ ${empData.name} 積分已修正！`);
+    runAudit();
+  } catch(e) { alert('修正失敗：'+e.message); }
+};
+
 window.loadTeams = async function() {
   const wrap = document.getElementById('teams-table');
   wrap.innerHTML = '<div class="loading">載入中...</div>';
@@ -1151,27 +1463,68 @@ window.openEditModal = async function(empId) {
   try {
     const snap = await getDoc(doc(db,'summer2026_employees',empId));
     const d = snap.data();
+
+    // 讀取打卡紀錄計算每週明細
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const checkins = checkSnap.docs.map(doc=>doc.data())
+      .filter(c=>c.empId===empId&&(c.status==='通過'||c.status==='補登通過'))
+      .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    const activityStart = new Date(settingsData.startDate||'2026-07-13');
+    const sportPtsMap = [1,1,3,1,1,3,0];
+    const weeks = {};
+    checkins.forEach(c=>{
+      const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000) : new Date();
+      const ds = Math.floor((uploadDate-activityStart)/86400000);
+      const wk = ds>=0 ? Math.floor(ds/7) : 0;
+      if(!weeks[wk]) weeks[wk]={diet:0,sport:0,sportCnt:0,health:0,healthCnt:0,photo:0};
+      const w = weeks[wk];
+      if(c.taskType==='飲食打卡') { w.diet++; }
+      else if(c.taskType==='運動打卡') { const pts=sportPtsMap[Math.min(w.sportCnt,6)]; w.sport+=pts; w.sportCnt++; }
+      else if(c.taskType==='健康飲食') { w.healthCnt++; if(w.healthCnt===4)w.health+=4; else if(w.healthCnt>4&&w.healthCnt<=7)w.health+=2; }
+      else if(c.taskType==='照片心得') w.photo=5;
+    });
+    const weekKeys = Object.keys(weeks).map(Number).sort((a,b)=>a-b);
+    const fmt = dt => `${dt.getMonth()+1}/${dt.getDate()}`;
+    const weeklyHtml = weekKeys.map(wk=>{
+      const w = weeks[wk];
+      const ws = new Date(activityStart.getTime()+wk*7*86400000);
+      const we = new Date(ws.getTime()+6*86400000);
+      const total = w.diet + w.sport + w.health + w.photo;
+      return `<div style="background:#1a1a2e;border-radius:8px;padding:8px;margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#ffd700;font-weight:700;margin-bottom:4px">
+          <span>第${wk+1}週 ${fmt(ws)}-${fmt(we)}</span><span>+${total}分</span>
+        </div>
+        <div style="font-size:11px;color:#aaaacc;line-height:1.8">
+          🥗飲食${w.diet}次+${w.diet}分　🏋️運動${w.sportCnt}次+${w.sport}分　🏅均衡${w.healthCnt}次+${w.health}分${w.photo?' 📸+5分':''}
+        </div>
+      </div>`;
+    }).join('');
+
+    // 修改紀錄
+    const logs = d.adminLogs || [];
+    const logsHtml = logs.length ? `<div style="max-height:80px;overflow-y:auto;font-size:10px;color:#8888aa;margin-top:6px;background:#0a0a1e;padding:6px;border-radius:6px">
+      ${logs.map(l=>`<div>${l}</div>`).join('')}
+    </div>` : '';
+
     document.getElementById('edit-form').innerHTML = `
       <input type="hidden" id="edit-empid" value="${empId}"/>
-      <div class="form-row">
-        <label class="form-label">組別</label>
-        <select class="form-input" id="edit-group">
-          <option value="" ${!d.group?'selected':''}>未選</option>
-          <option value="fat" ${d.group==='fat'?'selected':''}>⚡ 減脂組</option>
-          <option value="muscle" ${d.group==='muscle'?'selected':''}>💪 增肌組</option>
-        </select>
+      <div style="font-size:13px;color:#aaaaff;font-weight:700;margin-bottom:6px">${d.name}（${empId}）</div>
+      ${weeklyHtml}
+      <div style="border-top:1px solid #3a3a6a;padding-top:8px;margin-top:4px">
+        <div style="font-size:11px;color:#8888aa;margin-bottom:6px">以下可手動修改：</div>
+        ${[
+          ['totalPts','總積分'],['taskPts','任務積分'],['inbodyPts','體態積分'],
+          ['consecutiveDays','連續打卡天數'],['weeklyDiet','本週飲食次數'],
+          ['weeklySport','本週運動次數'],['weeklyHealth','本週均衡次數'],
+          ['jellyCount','馬甲果凍次數'],
+        ].map(([key,label]) => `
+          <div class="form-row">
+            <label class="form-label">${label}</label>
+            <input class="form-input" type="number" id="edit-${key}" value="${d[key]||0}" step="1" data-original="${d[key]||0}"/>
+          </div>
+        `).join('')}
       </div>
-      ${[
-        ['totalPts','總積分'],['taskPts','任務積分'],['inbodyPts','體態積分'],
-        ['consecutiveDays','連續打卡天數'],['weeklyDiet','本週飲食次數'],
-        ['weeklySport','本週運動次數'],['weeklyHealth','本週均衡次數'],
-        ['jellyCount','馬甲果凍次數'],
-      ].map(([key,label]) => `
-        <div class="form-row">
-          <label class="form-label">${label}</label>
-          <input class="form-input" type="number" id="edit-${key}" value="${d[key]||0}" step="1"/>
-        </div>
-      `).join('')}
+      ${logsHtml}
     `;
     document.getElementById('edit-modal').style.display='flex';
   } catch(e) { alert('載入失敗：'+e.message); }
@@ -1181,7 +1534,6 @@ window.openMakeupModal = function(empId, name) {
   document.getElementById('makeup-emp-name').textContent = `員工：${name}（${empId}）`;
   document.getElementById('makeup-modal').dataset.empId = empId;
   document.getElementById('makeup-modal').dataset.empName = name;
-  // 預設今天日期
   document.getElementById('makeup-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('makeup-reason').value = '';
   document.getElementById('makeup-modal').style.display='flex';
@@ -1190,14 +1542,27 @@ window.openMakeupModal = function(empId, name) {
 window.saveEdit = async function() {
   const empId = document.getElementById('edit-empid').value;
   const fields = ['totalPts','taskPts','inbodyPts','consecutiveDays','weeklyDiet','weeklySport','weeklyHealth','jellyCount'];
-  const updates = { updatedByAdmin: true, adminEditAt: new Date() };
-  // 組別
-  const groupEl = document.getElementById('edit-group');
-  if(groupEl) updates.group = groupEl.value;
+  const updates = { updatedByAdmin: true, adminEditAt: new Date(), adminEditBy: adminOperator };
+  // 記錄修改差異
+  const changeLog = [];
+  const now = new Date().toLocaleString('zh-TW');
   fields.forEach(k => {
     const el = document.getElementById('edit-'+k);
-    if(el) updates[k] = parseInt(el.value)||0;
+    if(!el) return;
+    const newVal = parseInt(el.value)||0;
+    const oldVal = parseInt(el.dataset.original)||0;
+    updates[k] = newVal;
+    if(newVal !== oldVal) {
+      changeLog.push(`${k}: ${oldVal}→${newVal}`);
+    }
   });
+  if(changeLog.length > 0) {
+    // 讀取現有 logs 並追加
+    const snap = await getDoc(doc(db,'summer2026_employees',empId));
+    const existingLogs = snap.data()?.adminLogs || [];
+    existingLogs.push(`${now} ${adminOperator}：${changeLog.join('、')}`);
+    updates.adminLogs = existingLogs;
+  }
   try {
     await updateDoc(doc(db,'summer2026_employees',empId), updates);
     alert('✅ 已更新！');
@@ -1216,6 +1581,20 @@ window.saveMakeup = async function() {
   if(!date) { alert('請選擇補登日期'); return; }
 
   try {
+    // 防呆：檢查補登日期是否已有通過紀錄
+    const makeupDateStr = new Date(date + 'T12:00:00').toDateString();
+    const allSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const dupCheck = allSnap.docs.filter(d => {
+      const dd = d.data();
+      return dd.empId===empId && dd.taskType===taskType && dd.status==='通過'
+        && dd.createdAt?.seconds
+        && new Date(dd.createdAt.seconds*1000).toDateString()===makeupDateStr;
+    });
+    if(dupCheck.length > 0) {
+      alert(`⚠️ ${empId} 在 ${date} 已有一筆「${taskType}」通過紀錄，不可重複補登！`);
+      return;
+    }
+
     // 1. 寫入補登打卡紀錄
     const docRef = await addDoc(collection(db,'summer2026_checkins'), {
       empId, empName, taskType,
@@ -1224,7 +1603,8 @@ window.saveMakeup = async function() {
       isMakeup: true,
       makeupDate: date,
       makeupReason: reason||'主辦人補登',
-      createdAt: new Date(date + 'T12:00:00') // 用補登日期，避免影響其他日期的打卡狀態
+      makeupBy: adminOperator,
+      createdAt: new Date(date + 'T12:00:00')
     });
 
     // 2. 用真實的 checkin ID 呼叫 quickReview
@@ -1667,6 +2047,8 @@ _$('nav-jelly').addEventListener('click', () => showPage('jelly'));
 _$('nav-completion').addEventListener('click', () => showPage('completion'));
 _$('nav-spell').addEventListener('click', () => showPage('spell'));
 _$('nav-teams').addEventListener('click', () => showPage('teams'));
+_$('nav-report').addEventListener('click', () => showPage('report'));
+_$('nav-audit').addEventListener('click', () => showPage('audit'));
 _$('nav-settings').addEventListener('click', () => showPage('settings'));
 _$('nav-logout').addEventListener('click', adminLogout);
 
@@ -1692,6 +2074,9 @@ _$('btn-export-spell').addEventListener('click', exportSpell);
 
 // Settings
 _$('btn-reload-teams').addEventListener('click', loadTeams);
+_$('btn-reload-report').addEventListener('click', loadReport);
+_$('btn-export-report').addEventListener('click', exportReport);
+_$('btn-run-audit').addEventListener('click', runAudit);
 _$('btn-save-group').addEventListener('click', saveGroupChange);
 _$('btn-close-change-group').addEventListener('click', () => _$('change-group-modal').style.display='none');
 _$('btn-save-settings').addEventListener('click', saveSettings);
