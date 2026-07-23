@@ -752,6 +752,9 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
         updates.letters = letters;
       }
 
+      // 寫入實際給分到打卡紀錄
+      await updateDoc(ref, { earnedPts: earnedPts, scoredBy: adminOperator });
+
     } else if(status === '駁回') {
       // 駁回：扣回積分
       const earnedPts = pts || 0;
@@ -760,10 +763,6 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
     }
 
     await updateDoc(empRef, updates);
-    // 寫入實際給分到打卡紀錄
-    if(status === '通過') {
-      await updateDoc(ref, { earnedPts: earnedPts, scoredBy: adminOperator });
-    }
     loadCheckins();
   } catch(e) {
     alert('操作失敗：' + e.message);
