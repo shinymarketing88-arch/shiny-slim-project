@@ -985,11 +985,24 @@ async function loadTeamSection() {
 
 async function renderTeamCard(wrap) {
   if(!myTeam) return;
-  // 讀取隊員資料
   const memberData = [];
+  const today = new Date().toDateString();
+  const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+  const todayCheckins = checkSnap.docs.map(d=>d.data()).filter(d=>
+    d.createdAt?.seconds && new Date(d.createdAt.seconds*1000).toDateString()===today
+    && (d.status==='通過'||d.status==='待審核'||d.status==='補登通過')
+  );
   for(const empId of myTeam.members) {
     const snap = await getDoc(doc(db,'summer2026_employees',empId));
-    if(snap.exists()) memberData.push({empId, ...snap.data()});
+    if(snap.exists()) {
+      const data = {empId, ...snap.data()};
+      // 今日打卡狀態
+      const myToday = todayCheckins.filter(c=>c.empId===empId);
+      data.todayDiet = myToday.some(c=>c.taskType==='飲食打卡');
+      data.todaySport = myToday.some(c=>c.taskType==='運動打卡');
+      data.todayHealth = myToday.some(c=>c.taskType==='健康飲食');
+      memberData.push(data);
+    }
   }
   memberData.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
   const isLeader = myTeam.leaderId === S.empId;
@@ -1011,10 +1024,12 @@ async function renderTeamCard(wrap) {
         <div class="team-member">
           <span style="font-size:14px">${['🥇','🥈','🥉','4️⃣','5️⃣'][i]||''}</span>
           <span class="team-member-name">${m.nickname||m.name}${m.empId===S.empId?' 👈':''}</span>
+          <span style="font-size:11px">${m.todayDiet?'🥗':'⬜'}${m.todaySport?'🏋️':'⬜'}${m.todayHealth?'🏅':'⬜'}</span>
           <span class="team-member-tag" style="${m.group==='fat'?'background:#fff7ed;color:#c2410c':'background:#eff6ff;color:#1d4ed8'}">${m.group==='fat'?'減脂':'增肌'}</span>
           <span class="team-member-pts">${m.totalPts||0}分</span>
         </div>
       `).join('')}
+      <div style="font-size:10px;color:var(--text-light);text-align:center;margin-top:6px">今日打卡：🥗飲食 🏋️運動 🏅均衡 ⬜未完成</div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-main" id="btn-refresh-team" style="margin-top:0;flex:1;font-size:12px">↻ 更新隊伍</button>
         <button style="flex:0 0 auto;padding:10px 12px;background:var(--white);border:1px solid #fca5a5;border-radius:10px;color:var(--red);font-size:12px;cursor:pointer" id="btn-leave-team">離隊</button>
@@ -1343,7 +1358,11 @@ function renderJelly() {
   const cd = S.consecutiveDays||0;
   $('jelly-bar').style.width = Math.min(Math.round(cd/10*100),100) + '%';
   const pending = jc - jd;
-  $('jelly-hint').textContent = `連續 ${cd}/10 天（已兌換 ${jd}/4 次${pending>0?' · 待領取 '+pending+' 次':''}）`;
+  const remain = 10 - (cd % 10);
+  const jellyHintText = cd >= 40 ? `已達最高兌換次數！` 
+    : jc >= 4 ? `已達最高兌換次數！`
+    : `連續 ${cd % 10}/10 天（已兌換 ${jd}/4 次${pending>0?' · 待領取 '+pending+' 次':''}）再連續 ${remain} 天可兌換！`;
+  $('jelly-hint').textContent = jellyHintText;
   $('jelly-slots').innerHTML = Array(4).fill(0).map((_,i) => {
     if(i < jd) return `<div class="j-slot earned">🧡</div>`;
     if(i < jc) return `<div class="j-slot" style="background:#fff3cd;border-color:#ffc107">⏳</div>`;
@@ -1596,10 +1615,13 @@ async function loadRanking(group) {
     if(currentRankFilter === 'fat' || currentRankFilter === 'muscle') {
       items = items.filter(i=>i.group===currentRankFilter);
     }
-    items.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));{wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚無資料</div>';return;}
+    items.sort((a,b)=>(b.totalPts||0)-(a.totalPts||0));
+    if(!items.length){wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">尚無資料</div>';return;}
     const rnCls=['g','s','b'];
     const myRank=items.findIndex(i=>i.empId===S.empId)+1;
-    wrap.innerHTML=items.slice(0,8).map((i,idx)=>{
+    const showCount = 8;
+    let expanded = false;
+    const renderList = (count) => items.slice(0,count).map((i,idx)=>{
       const isMe=i.empId===S.empId;
       const tagStyle=i.group==='fat'?'background:#fff7ed;color:#c2410c':'background:#eff6ff;color:#1d4ed8';
       return `<div class="rank-row${isMe?' me':''}">
@@ -1608,7 +1630,23 @@ async function loadRanking(group) {
         <span class="r-tag" style="${tagStyle}">${i.group==='fat'?'減脂':'增肌'}</span>
         <span class="r-pts">${i.totalPts||0}分</span>
       </div>`;
-    }).join('')+(myRank>8?`<div style="text-align:center;font-size:11px;color:var(--text-light);padding:6px">你目前第 ${myRank} 名</div>`:'');
+    }).join('');
+    
+    // 週冠軍提示
+    const champion = items[0];
+    const championHtml = champion ? `<div style="text-align:center;font-size:12px;margin-bottom:8px;padding:6px;background:linear-gradient(135deg,#fef3c7,#fff7ed);border-radius:8px">
+      <span style="font-size:14px">👑</span> <span style="font-weight:700;color:#92400e">${champion.nickname||champion.empId}</span> 
+      <span style="color:#b45309">${champion.totalPts||0}分 領先中！</span>
+    </div>` : '';
+
+    wrap.innerHTML = championHtml + renderList(showCount)
+      + (myRank>showCount?`<div style="text-align:center;font-size:11px;color:var(--text-light);padding:6px">你目前第 ${myRank} 名</div>`:'')
+      + (items.length>showCount?`<button id="btn-rank-more" style="width:100%;padding:8px;border:1px solid var(--purple-border);border-radius:10px;background:var(--purple-pale);color:var(--purple-mid);font-size:12px;font-weight:700;cursor:pointer;margin-top:6px">查看更多（共 ${items.length} 人）</button>`:'');
+    
+    document.getElementById('btn-rank-more')?.addEventListener('click', function() {
+      this.remove();
+      wrap.innerHTML = championHtml + renderList(items.length);
+    });
   } catch(e){
     wrap.innerHTML='<div style="text-align:center;font-size:12px;color:var(--text-light);padding:12px">載入失敗，請重試</div>';
   }
