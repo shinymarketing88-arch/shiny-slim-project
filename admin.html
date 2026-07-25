@@ -662,129 +662,14 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
       }
     }
 
+    // ── 1. 更新打卡紀錄狀態 ──
     await updateDoc(ref, { status, reviewedAt: new Date(), reviewedBy: adminOperator });
 
-    if(!empId) { loadCheckins(); return; }
-
-    const empRef = doc(db, 'summer2026_employees', empId);
-    const empSnap = await getDoc(empRef);
-    if(!empSnap.exists()) { loadCheckins(); return; }
-
-    const data = empSnap.data();
-    const updates = {};
-
-    if(status === '通過') {
-      // ── 0. 先讀取打卡上傳日期（所有任務都用這個日期判斷）──
-      const checkinSnap = await getDoc(doc(db,'summer2026_checkins',id));
-      const checkinData = checkinSnap.data();
-      const uploadDate = checkinData?.createdAt?.seconds
-        ? new Date(checkinData.createdAt.seconds * 1000).toDateString()
-        : new Date().toDateString();
-      const uploadDateObj = new Date(uploadDate);
-
-      // ── 1. 自動週重置：用今天的日期判斷是否跨週（與上傳日期無關）──
-      const activityStart = new Date(settingsData.startDate || '2026-07-13');
-      const now = new Date();
-      const daysSinceStart = Math.floor((now - activityStart) / 86400000);
-      const currentWeek = daysSinceStart >= 0 ? Math.floor(daysSinceStart / 7) : 0;
-      const lastWeek = data.lastWeek ?? -1;
-      const isNewWeek = daysSinceStart >= 0 && currentWeek > lastWeek;
-
-      if(isNewWeek) {
-        updates.weeklyDiet   = 0;
-        updates.weeklySport  = 0;
-        updates.weeklyHealth = 0;
-        updates.lastWeek     = currentWeek;
-        data.weeklyDiet   = 0;
-        data.weeklySport  = 0;
-        data.weeklyHealth = 0;
-      } else {
-        updates.lastWeek = currentWeek;
-      }
-
-      // ── 2. 計算基本積分 ──
-      let earnedPts = pts || 0;
-
-      // ── 3. 運動打卡：1/1/3/1/1/3/0 ──
-      if(taskType === '運動打卡') {
-        const newSportCount = (data.weeklySport||0) + 1;
-        updates.weeklySport = newSportCount;
-        const sportPtsMap = [1,1,3,1,1,3,0];
-        const idx = Math.min(newSportCount - 1, 6);
-        earnedPts = sportPtsMap[idx];
-      }
-
-      // ── 4. 飲食打卡：連續天數用上傳日期計算 ──
-      if(taskType === '飲食打卡') {
-        earnedPts = 1;
-        const newDietCount = (data.weeklyDiet||0) + 1;
-        updates.weeklyDiet = newDietCount;
-
-        const lastDate = data.lastDietDate || '';
-        const yesterdayOfUpload = new Date(uploadDateObj.getTime()-86400000).toDateString();
-
-        let newConsecutive = data.consecutiveDays || 0;
-        if(lastDate === yesterdayOfUpload) {
-          newConsecutive += 1;
-        } else if(lastDate !== uploadDate) {
-          newConsecutive = 1;
-        }
-        updates.consecutiveDays = newConsecutive;
-        updates.lastDietDate = uploadDate;
-
-        // ── 5. 馬甲果凍：連續10天兌換，最多4次 ──
-        if(newConsecutive > 0 && newConsecutive % 10 === 0) {
-          const newJellyCount = (data.jellyCount||0) + 1;
-          if(newJellyCount <= 4) {
-            updates.jellyCount = newJellyCount;
-          }
-        }
-      }
-
-      // ── 6. 均衡滿分：1-3次=0分、第4次+4分、第5-7次各+2分 ──
-      if(taskType === '健康飲食') {
-        const weeklyHealth = (data.weeklyHealth||0) + 1;
-        updates.weeklyHealth = weeklyHealth;
-        if(weeklyHealth <= 3) {
-          earnedPts = 0;
-        } else if(weeklyHealth === 4) {
-          earnedPts = 4;
-        } else if(weeklyHealth <= 7) {
-          earnedPts = 2;
-        } else {
-          earnedPts = 0;
-        }
-      }
-
-      // ── 5. 積分更新 ──
-      const oldPts = data.totalPts || 0;
-      const newPts = oldPts + earnedPts;
-      updates.taskPts = (data.taskPts||0) + earnedPts;
-      updates.totalPts = newPts;
-
-      // ── 6. 拼字字母：每滿8分發一個 ──
-      const oldMilestone = Math.floor(oldPts / PTS_PER_LETTER);
-      const newMilestone = Math.floor(newPts / PTS_PER_LETTER);
-      if(newMilestone > oldMilestone) {
-        const letters = [...(data.letters||[])];
-        for(let i=0; i<(newMilestone-oldMilestone); i++) {
-          const letter = getRandomLetter(letters);
-          if(letter) letters.push(letter);
-        }
-        updates.letters = letters;
-      }
-
-      // 寫入實際給分到打卡紀錄
-      await updateDoc(ref, { earnedPts: earnedPts, scoredBy: adminOperator });
-
-    } else if(status === '駁回') {
-      // 駁回：扣回積分
-      const earnedPts = pts || 0;
-      updates.taskPts = Math.max(0, (data.taskPts||0) - earnedPts);
-      updates.totalPts = Math.max(0, (data.totalPts||0) - earnedPts);
+    // ── 2. 呼叫統一計算引擎重算該員工所有數值 ──
+    if(empId) {
+      await calcEmployeeScore(empId);
     }
 
-    await updateDoc(empRef, updates);
     loadCheckins();
   } catch(e) {
     alert('操作失敗：' + e.message);
@@ -1301,6 +1186,11 @@ window.runAudit = async function() {
       s.recalcPts += pts;
     });
 
+    // 加上 inbodyPts 和 rankPts 後才跟 totalPts 比較
+    Object.values(calc).forEach(s => {
+      s.recalcTotal = s.recalcPts + (s.inbodyPts||0) + (s.rankPts||0);
+    });
+
     // 比較並產生詳細差異說明
     const results = Object.values(calc).filter(s=>s.group);
     // 對有差異的員工計算每週明細
@@ -1403,7 +1293,7 @@ window.recalcAllFromAudit = async function() {
     const toFix = Object.values(calc).filter(s=>s.group&&(s.recalcPts+(s.inbodyPts||0)+(s.rankPts||0))!==(s.totalPts||0));
     let count=0;
     for(const s of toFix) {
-      await fixOneEmployeeSilent(s.empId);
+      await calcEmployeeScore(s.empId);
       count++;
     }
     wrap.innerHTML = `<div style="text-align:center;color:#66cc66;font-size:14px;padding:20px">✅ 完成！共修正 ${count} 位員工的積分。<br>請重新執行稽核確認。</div>`;
@@ -1411,7 +1301,7 @@ window.recalcAllFromAudit = async function() {
 };
 
 // 靜默版：不跳確認框，供批次使用
-window.fixOneEmployeeSilent = async function(empId) {
+window.calcEmployeeScore = async function(empId) {
   const activityStart = new Date(settingsData.startDate||'2026-07-13');
   const sportPtsMap = [1,1,3,1,1,3,0];
   const empSnap = await getDoc(doc(db,'summer2026_employees',empId));
@@ -1443,18 +1333,13 @@ window.fixOneEmployeeSilent = async function(empId) {
   });
   // 重算字母
   const totalPtsCalc = taskPts+(empData.inbodyPts||0)+(empData.rankPts||0);
-  const shouldHaveLetters = Math.floor(totalPtsCalc / 8);
+  const shouldHaveLetters = Math.floor(totalPtsCalc / PTS_PER_LETTER);
   let letters = [...(empData.letters||[])];
-  const TARGET = 'SHINYBRANDS';
-  function getRandomLetterForFix(current) {
-    const remaining = TARGET.split('').filter(l => { const i=current.indexOf(l); if(i!==-1){current=[...current];current.splice(i,1);return false;} return true; });
-    return remaining.length ? remaining[Math.floor(Math.random()*remaining.length)] : null;
-  }
   if(letters.length > shouldHaveLetters) {
     letters = letters.slice(0, shouldHaveLetters);
   } else {
     while(letters.length < shouldHaveLetters) {
-      const l = getRandomLetterForFix([...letters]);
+      const l = getRandomLetter([...letters]);
       if(l) letters.push(l); else break;
     }
   }
@@ -1847,7 +1732,7 @@ window.deleteCheckinAndRecalc = async function(checkinId, empId, empName, taskTy
     await updateDoc(doc(db,'summer2026_checkins',checkinId), {
       status:'已刪除', deletedAt:new Date(), deletedBy:adminOperator
     });
-    await fixOneEmployeeSilent(empId);
+    await calcEmployeeScore(empId);
     alert(`✅ 已刪除並重算 ${empName} 的積分！`);
     loadCheckins();
   } catch(e) { alert('操作失敗：'+e.message); }
@@ -2166,7 +2051,7 @@ window.recalcAllScores = async function() {
     const changes = Object.values(recalcPreviewData).filter(s=>s.oldPts!==s.newPts);
     let count = 0;
     for(const s of changes) {
-      await fixOneEmployeeSilent(s.empId);
+      await calcEmployeeScore(s.empId);
       count++;
     }
     area.innerHTML=`<div style="color:#66cc66;font-size:13px;font-weight:700">✅ 完成！共修正 ${count} 位員工的積分</div>`;
