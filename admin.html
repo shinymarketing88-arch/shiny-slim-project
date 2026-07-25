@@ -121,10 +121,11 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <div class="page-title">📋 打卡審核</div>
       <div class="filter-row">
         <select id="filter-status" onchange="loadCheckins()">
-          <option value="待審核">待審核</option>
-          <option value="全部">全部</option>
+          <option value="待審核" selected>待審核</option>
+          <option value="全部">全部（不含已刪除）</option>
           <option value="通過">已通過</option>
           <option value="駁回">已駁回</option>
+          <option value="已刪除">已刪除</option>
         </select>
         <select id="filter-task" onchange="loadCheckins()">
           <option value="">所有任務</option>
@@ -135,6 +136,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
         </select>
         <input type="text" class="search-box" id="search-emp" placeholder="搜尋員工編號/姓名" oninput="loadCheckins()"/>
         <button class="btn btn-sm btn-primary" id="btn-reload-checkins">🔄 重新載入</button>
+        <button class="btn btn-sm btn-green" id="btn-batch-approve">✅ 批次通過全部待審核</button>
       </div>
       <div id="checkins-table"><div class="loading">載入中...</div></div>
     </div>
@@ -254,6 +256,7 @@ tr:hover td{background:rgba(255,255,255,0.02)}
       <div class="page-title">📋 積分稽核</div>
       <div class="filter-row">
         <button class="btn btn-sm btn-primary" id="btn-run-audit">🔍 執行稽核</button>
+        <button class="btn btn-sm btn-green" id="btn-recalc-weekly-audit">🔄 重新計算所有週計數</button>
       </div>
       <div id="audit-table"><div class="loading">點「執行稽核」開始檢查</div></div>
     </div>
@@ -521,6 +524,23 @@ async function loadDashboard() {
   } catch(e) { console.error(e); }
 }
 
+window.batchApprove = async function() {
+  const snap = await getDocs(collection(db,'summer2026_checkins'));
+  const pending = snap.docs.filter(d=>d.data().status==='待審核');
+  if(!pending.length) { alert('沒有待審核的紀錄'); return; }
+  if(!confirm(`確定要一次通過 ${pending.length} 筆待審核紀錄嗎？`)) return;
+  let count=0, skip=0;
+  for(const d of pending) {
+    const data = d.data();
+    try {
+      await quickReview(d.id, '通過', data.empId, data.pts||1, data.taskType);
+      count++;
+    } catch(e) { skip++; }
+  }
+  alert(`✅ 完成！通過 ${count} 筆${skip?' · 跳過 '+skip+' 筆':''}`);
+  loadCheckins();
+};
+
 window.loadCheckins = async function() {
   const status = document.getElementById('filter-status').value;
   const task = document.getElementById('filter-task').value;
@@ -531,7 +551,8 @@ window.loadCheckins = async function() {
     let q = collection(db, 'summer2026_checkins');
     const snap = await getDocs(q);
     let items = snap.docs.map(d => ({id:d.id, ...d.data()}));
-    if(status !== '全部') items = items.filter(i => i.status === status);
+    if(status === '全部') items = items.filter(i => i.status !== '已刪除' && i.status !== '已重置');
+    else items = items.filter(i => i.status === status);
     if(task) items = items.filter(i => i.taskType === task);
     if(search) items = items.filter(i => i.empId?.includes(search) || i.empName?.includes(search));
     items.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
@@ -1167,6 +1188,72 @@ window.exportReport = async function() {
   a.click();
 };
 
+window.recalcWeeklyFromAudit = async function() {
+  if(!confirm('確定要重新計算所有員工的本週計數嗎？\n只會更新 weeklyDiet/weeklySport/weeklyHealth，不動積分。')) return;
+  const wrap = document.getElementById('audit-table');
+  wrap.innerHTML = '<div class="loading">計算中...</div>';
+  try {
+    const activityStart = new Date(settingsData.startDate||'2026-07-13');
+    const now = new Date();
+    const daysSince = Math.floor((now-activityStart)/86400000);
+    const currentWeek = daysSince>=0 ? Math.floor(daysSince/7) : 0;
+    const weekStart = new Date(activityStart.getTime()+currentWeek*7*86400000);
+
+    const empSnap = await getDocs(collection(db,'summer2026_employees'));
+    const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+    const allCheckins = checkSnap.docs.map(d=>d.data())
+      .filter(d=>(d.status==='通過'||d.status==='補登通過'));
+
+    // 計算每人本週次數
+    const empWeekly = {};
+    allCheckins.forEach(c=>{
+      const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000) : new Date();
+      const ds = Math.floor((uploadDate-activityStart)/86400000);
+      const wk = ds>=0 ? Math.floor(ds/7) : 0;
+      if(wk !== currentWeek) return;
+      if(!empWeekly[c.empId]) empWeekly[c.empId] = {diet:0, sport:0, health:0};
+      if(c.taskType==='飲食打卡') empWeekly[c.empId].diet++;
+      else if(c.taskType==='運動打卡') empWeekly[c.empId].sport++;
+      else if(c.taskType==='健康飲食') empWeekly[c.empId].health++;
+    });
+
+    let changed = 0, total = 0;
+    const changes = [];
+    for(const d of empSnap.docs) {
+      const data = d.data();
+      if(!data.group) continue;
+      total++;
+      const w = empWeekly[data.empId] || {diet:0, sport:0, health:0};
+      const needsUpdate = w.diet!==(data.weeklyDiet||0) || w.sport!==(data.weeklySport||0) || w.health!==(data.weeklyHealth||0);
+      if(needsUpdate) {
+        changes.push({name:data.name, empId:data.empId,
+          oldD:data.weeklyDiet||0, newD:w.diet,
+          oldS:data.weeklySport||0, newS:w.sport,
+          oldH:data.weeklyHealth||0, newH:w.health});
+        await updateDoc(d.ref, {
+          weeklyDiet:w.diet, weeklySport:w.sport, weeklyHealth:w.health,
+          lastWeek:currentWeek
+        });
+        changed++;
+      }
+    }
+    wrap.innerHTML = `
+      <div style="text-align:center;color:#66cc66;font-size:14px;padding:12px;font-weight:700">
+        ✅ 完成！共修正 ${changed}/${total} 位員工的週計數
+      </div>
+      ${changes.length ? `<table style="font-size:11px">
+        <tr><th>員工</th><th>飲食</th><th>運動</th><th>均衡</th></tr>
+        ${changes.map(c=>`<tr>
+          <td>${c.name}（${c.empId}）</td>
+          <td>${c.oldD}→<b style="color:#ffd700">${c.newD}</b></td>
+          <td>${c.oldS}→<b style="color:#ffd700">${c.newS}</b></td>
+          <td>${c.oldH}→<b style="color:#ffd700">${c.newH}</b></td>
+        </tr>`).join('')}
+      </table>` : ''}
+    `;
+  } catch(e) { wrap.innerHTML=`<div class="loading" style="color:#ff6666">失敗：${e.message}</div>`; }
+};
+
 window.runAudit = async function() {
   const wrap = document.getElementById('audit-table');
   wrap.innerHTML = '<div class="loading">稽核中...</div>';
@@ -1181,7 +1268,7 @@ window.runAudit = async function() {
 
     // 重算每人積分
     const calc = {};
-    empSnap.docs.forEach(d=>{const dd=d.data(); calc[dd.empId]={...dd, recalcPts:0, weeklyS:0, weeklyH:0, weeklyHC:0, lastWk:-1, issues:[]};});
+    empSnap.docs.forEach(d=>{const dd=d.data(); calc[dd.empId]={...dd, recalcPts:0, recalcTotal:0, weeklyS:0, weeklyH:0, weeklyHC:0, lastWk:-1, issues:[]};});
 
     // 檢查同天多筆通過
     const byEmpDateTask = {};
@@ -1220,7 +1307,7 @@ window.runAudit = async function() {
     const actStart = activityStart;
     const sportPM = [1,1,3,1,1,3,0];
     results.forEach(s=>{
-      if(s.recalcPts===(s.totalPts||0) && s.issues.length===0) return;
+      if(s.recalcTotal===(s.totalPts||0) && s.issues.length===0) return;
       // 重新按週計算明細
       const myCheckins = allCheckins.filter(c=>c.empId===s.empId);
       const weeks = {};
@@ -1244,7 +1331,7 @@ window.runAudit = async function() {
       s.weekDetail = detailLines.join('<br>');
     });
 
-    const issues = results.filter(s=>s.recalcPts!==(s.totalPts||0)||s.issues.length>0);
+    const issues = results.filter(s=>s.recalcTotal!==(s.totalPts||0)||s.issues.length>0);
     const correct = results.length - issues.length;
 
     wrap.innerHTML = `
@@ -1264,13 +1351,13 @@ window.runAudit = async function() {
       ${issues.length ? `<table style="font-size:11px">
         <tr><th>員工</th><th>目前</th><th>應得</th><th>差異</th><th>異常說明</th><th>每週明細</th><th>操作</th></tr>
         ${issues.map(s=>{
-          const diff = s.recalcPts-(s.totalPts||0);
+          const diff = s.recalcTotal-(s.totalPts||0);
           return `<tr>
             <td>${s.name}<br><span style="color:#888;font-size:10px">${s.empId}</span></td>
             <td style="text-align:center">${s.totalPts||0}</td>
-            <td style="text-align:center;color:#ffd700;font-weight:700">${s.recalcPts}</td>
+            <td style="text-align:center;color:#ffd700;font-weight:700">${s.recalcTotal}</td>
             <td style="text-align:center;color:${diff>0?'#66cc66':diff<0?'#ff6666':'#888'};font-weight:700">${diff>0?'+':''}${diff}</td>
-            <td style="font-size:10px;color:#ff9944">${s.issues.join('<br>')||'積分不一致'}</td>
+            <td style="font-size:10px;color:#ff9944">${s.issues.join('<br>')||`任務${s.recalcPts} + InBody${s.inbodyPts||0} + 名次${s.rankPts||0} ≠ ${s.totalPts||0}`}</td>
             <td style="font-size:9px;color:#aaaacc">${s.weekDetail||''}</td>
             <td><button class="btn btn-sm btn-gold" onclick="fixOneEmployee('${s.empId}')">🔧 修正</button></td>
           </tr>`;
@@ -1308,7 +1395,12 @@ window.recalcAllFromAudit = async function() {
       else if(c.taskType==='照片心得')pts=5;
       s.recalcPts+=pts;
     });
-    const toFix = Object.values(calc).filter(s=>s.group&&s.recalcPts!==(s.totalPts||0));
+
+    // 加上 inbodyPts 和 rankPts 後才跟 totalPts 比較
+    Object.values(calc).forEach(s => {
+      s.recalcTotal = s.recalcPts + (s.inbodyPts||0) + (s.rankPts||0);
+    });
+    const toFix = Object.values(calc).filter(s=>s.group&&(s.recalcPts+(s.inbodyPts||0)+(s.rankPts||0))!==(s.totalPts||0));
     let count=0;
     for(const s of toFix) {
       await fixOneEmployeeSilent(s.empId);
@@ -1349,11 +1441,28 @@ window.fixOneEmployeeSilent = async function(empId) {
     else if(c.taskType==='照片心得') pts=5;
     taskPts+=pts;
   });
+  // 重算字母
+  const totalPtsCalc = taskPts+(empData.inbodyPts||0)+(empData.rankPts||0);
+  const shouldHaveLetters = Math.floor(totalPtsCalc / 8);
+  let letters = [...(empData.letters||[])];
+  const TARGET = 'SHINYBRANDS';
+  function getRandomLetterForFix(current) {
+    const remaining = TARGET.split('').filter(l => { const i=current.indexOf(l); if(i!==-1){current=[...current];current.splice(i,1);return false;} return true; });
+    return remaining.length ? remaining[Math.floor(Math.random()*remaining.length)] : null;
+  }
+  if(letters.length > shouldHaveLetters) {
+    letters = letters.slice(0, shouldHaveLetters);
+  } else {
+    while(letters.length < shouldHaveLetters) {
+      const l = getRandomLetterForFix([...letters]);
+      if(l) letters.push(l); else break;
+    }
+  }
   await updateDoc(doc(db,'summer2026_employees',empId), {
-    taskPts, totalPts: taskPts+(empData.inbodyPts||0)+(empData.rankPts||0),
+    taskPts, totalPts: totalPtsCalc,
     weeklyDiet:weeklyD, weeklySport:weeklyS, weeklyHealth:weeklyHC,
     consecutiveDays:consecutive, lastDietDate, jellyCount,
-    lastWeek: Math.max(0, lastWk),
+    lastWeek: Math.max(0, lastWk), letters,
     adminLogs: [...(empData.adminLogs||[]), `${new Date().toLocaleString('zh-TW')} ${adminOperator}：🔄 批次重算`],
   });
 };
@@ -2162,6 +2271,7 @@ _$('nav-logout').addEventListener('click', adminLogout);
 
 // Reload buttons
 _$('btn-reload-checkins').addEventListener('click', loadCheckins);
+_$('btn-batch-approve').addEventListener('click', batchApprove);
 _$('btn-reload-members').addEventListener('click', loadMembers);
 _$('btn-add-member').addEventListener('click', () => _$('add-member-modal').style.display='flex');
 _$('btn-save-edit-date').addEventListener('click', saveEditDate);
@@ -2185,6 +2295,7 @@ _$('btn-reload-teams').addEventListener('click', loadTeams);
 _$('btn-reload-report').addEventListener('click', loadReport);
 _$('btn-export-report').addEventListener('click', exportReport);
 _$('btn-run-audit').addEventListener('click', runAudit);
+_$('btn-recalc-weekly-audit').addEventListener('click', recalcWeeklyFromAudit);
 _$('btn-save-group').addEventListener('click', saveGroupChange);
 _$('btn-close-change-group').addEventListener('click', () => _$('change-group-modal').style.display='none');
 _$('btn-save-settings').addEventListener('click', saveSettings);
