@@ -1261,10 +1261,14 @@ window.runAudit = async function() {
   } catch(e) { wrap.innerHTML='<div class="loading" style="color:#ff6666">稽核失敗：'+e.message+'</div>'; }
 };
 
+let _batchRecalcRunning = false;
+
 window.recalcAllFromAudit = async function() {
+  if(_batchRecalcRunning) { alert('⚠️ 已有一個修正作業正在執行中，請等待完成後再試！'); return; }
   if(!confirm('確定要一鍵修正所有員工的積分嗎？\n將根據所有通過的打卡紀錄重新計算。')) return;
+  _batchRecalcRunning = true;
   const wrap = document.getElementById('audit-table');
-  wrap.innerHTML = '<div class="loading">修正中，請耐心等待...</div>';
+  wrap.innerHTML = '<div class="loading">修正中，請耐心等待，不要重複點擊...</div>';
   try {
     const activityStart = new Date(settingsData.startDate||'2026-07-13');
     const sportPtsMap = [1,1,3,1,1,3,0];
@@ -1354,11 +1358,31 @@ window.recalcAllFromAudit = async function() {
   } catch(e) { 
     wrap.innerHTML=`<div class="loading" style="color:#ff6666">修正失敗：${e.message}</div>`; 
     console.error(e);
+  } finally {
+    _batchRecalcRunning = false;
   }
 };
 
 // 統一計算引擎：override = {checkinId, newStatus} 用來覆蓋剛更新的打卡紀錄狀態
+// 防止同一員工被同時重算造成資料競爭
+const _empLocks = {};
+
 window.calcEmployeeScore = async function(empId, override) {
+  // 如果這位員工正在被計算，排隊等待
+  while(_empLocks[empId]) {
+    await _empLocks[empId];
+  }
+  let resolveLock;
+  _empLocks[empId] = new Promise(r => resolveLock = r);
+  try {
+    await _doCalcEmployeeScore(empId, override);
+  } finally {
+    delete _empLocks[empId];
+    resolveLock();
+  }
+};
+
+async function _doCalcEmployeeScore(empId, override) {
   const activityStart = new Date(settingsData.startDate||'2026-07-13');
   const sportPtsMap = [1,1,3,1,1,3,0];
   const empSnap = await getDoc(doc(db,'summer2026_employees',empId));
@@ -1413,7 +1437,7 @@ window.calcEmployeeScore = async function(empId, override) {
     consecutiveDays:consecutive, lastDietDate, jellyCount,
     lastWeek: Math.max(0, lastWk), letters,
   });
-};
+}
 
 window.fixOneEmployee = async function(empId) {
   // 先檢查有沒有手動修改紀錄

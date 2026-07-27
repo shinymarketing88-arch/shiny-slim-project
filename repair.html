@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔧 ShapeShifter 積分修復工具</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0a0a1e;color:#fff;padding:20px;max-width:900px;margin:0 auto}
+h1{color:#ffd700;margin-bottom:10px}
+.status{padding:12px;border-radius:8px;margin:10px 0;font-size:14px}
+.ok{background:#1a2a1a;color:#66cc66}
+.err{background:#2a1a1a;color:#ff6666}
+.info{background:#1a1a2e;color:#aaaaff}
+button{padding:12px 24px;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:6px}
+.btn-blue{background:#4f46e5;color:#fff}
+.btn-green{background:#059669;color:#fff}
+.btn-red{background:#dc2626;color:#fff}
+button:disabled{opacity:0.5;cursor:not-allowed}
+table{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0}
+th,td{padding:6px;border:1px solid #333;text-align:center}
+th{background:#2a2a4a;color:#ffd700}
+.diff-plus{color:#66cc66;font-weight:700}
+.diff-minus{color:#ff6666;font-weight:700}
+.diff-zero{color:#888}
+#log{background:#0a0a14;border:1px solid #333;border-radius:8px;padding:12px;margin:10px 0;max-height:300px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa}
+</style>
+</head>
+<body>
+<h1>🔧 ShapeShifter 積分修復工具</h1>
+<p style="color:#888;margin-bottom:20px">獨立工具，直接連接 Firebase 修復所有員工積分</p>
+
+<div style="background:#1a1a2e;border-radius:8px;padding:16px;margin-bottom:16px">
+  <h3 style="color:#ffd700;margin-bottom:8px">🎯 單一員工修正（最安全）</h3>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="single-emp-id" placeholder="輸入員工編號 如 SM0062" style="flex:1;padding:10px;background:#0a0a14;border:1px solid #333;border-radius:6px;color:#fff">
+    <button class="btn-blue" onclick="fixSingleEmployee()">🔧 修正此人</button>
+  </div>
+  <div id="single-result" style="margin-top:10px"></div>
+</div>
+
+<div>
+  <button class="btn-blue" id="btn-audit" onclick="runFullAudit()">📋 Step 1: 執行稽核（只看不改）</button>
+  <button class="btn-green" id="btn-fix" onclick="fixAll()" disabled>✅ Step 2: 一鍵修正所有差異</button>
+  <button class="btn-blue" id="btn-verify" onclick="runFullAudit()" disabled>🔍 Step 3: 重新驗證</button>
+</div>
+
+<div id="summary"></div>
+<div id="log"></div>
+<div id="result"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCRzerWEnFDmPcCcRCETsMlp8WdAT0k90E",
+  authDomain: "shiny-slim-project.firebaseapp.com",
+  projectId: "shiny-slim-project",
+  storageBucket: "shiny-slim-project.firebasestorage.app",
+  messagingSenderId: "54178644265",
+  appId: "1:54178644265:web:c5a1ccf91a0d3b5ab2b738"
+});
+const db = getFirestore(app);
+
+const SPORT_PTS = [1,1,3,1,1,3,0];
+const PTS_PER_LETTER = 8;
+const TARGET = 'SHINYBRANDS';
+const ACTIVITY_START = new Date('2026-07-13');
+
+function log(msg) {
+  const el = document.getElementById('log');
+  el.innerHTML += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function getRandomLetter(currentLetters) {
+  const current = [...currentLetters];
+  const remaining = TARGET.split('').filter(l => {
+    const i = current.indexOf(l);
+    if(i !== -1) { current.splice(i, 1); return false; }
+    return true;
+  });
+  return remaining.length ? remaining[Math.floor(Math.random() * remaining.length)] : null;
+}
+
+// 核心計算函式：根據打卡紀錄計算一個員工的所有數值
+function calcFromCheckins(checkins) {
+  const sorted = [...checkins].sort((a,b) => (a.createdAt?.seconds||0) - (b.createdAt?.seconds||0));
+  let taskPts=0, weeklyD=0, weeklyS=0, weeklyHC=0, lastWk=-1;
+  let consecutive=0, lastDietDate='', jellyCount=0;
+
+  sorted.forEach(c => {
+    const uploadDate = c.createdAt?.seconds ? new Date(c.createdAt.seconds*1000) : new Date();
+    const uploadDateStr = uploadDate.toDateString();
+    const ds = Math.floor((uploadDate - ACTIVITY_START) / 86400000);
+    const wk = ds >= 0 ? Math.floor(ds / 7) : 0;
+    
+    if(wk > lastWk) {
+      weeklyD=0; weeklyS=0; weeklyHC=0; lastWk=wk;
+    }
+
+    let pts = 0;
+    if(c.taskType === '飲食打卡') {
+      pts = 1;
+      weeklyD++;
+      const yesterday = new Date(uploadDate.getTime() - 86400000).toDateString();
+      if(lastDietDate === yesterday) consecutive++;
+      else if(lastDietDate !== uploadDateStr) consecutive = 1;
+      lastDietDate = uploadDateStr;
+      if(consecutive > 0 && consecutive % 10 === 0 && jellyCount < 4) jellyCount++;
+    } else if(c.taskType === '運動打卡') {
+      pts = SPORT_PTS[Math.min(weeklyS, 6)];
+      weeklyS++;
+    } else if(c.taskType === '健康飲食') {
+      weeklyHC++;
+      if(weeklyHC === 4) pts = 4;
+      else if(weeklyHC > 4 && weeklyHC <= 7) pts = 2;
+    } else if(c.taskType === '照片心得') {
+      pts = 5;
+    }
+    taskPts += pts;
+  });
+
+  return { taskPts, weeklyD, weeklyS, weeklyHC, lastWk, consecutive, lastDietDate, jellyCount };
+}
+
+window.fixSingleEmployee = async function() {
+  const empId = document.getElementById('single-emp-id').value.trim().toUpperCase();
+  const resultEl = document.getElementById('single-result');
+  if(!empId) { resultEl.innerHTML = '<div class="status err">請輸入員工編號</div>'; return; }
+
+  resultEl.innerHTML = '<div class="status info">計算中...</div>';
+  try {
+    const empSnap = await getDoc(doc(db, 'summer2026_employees', empId));
+    if(!empSnap.exists()) { resultEl.innerHTML = '<div class="status err">找不到此員工</div>'; return; }
+    const emp = empSnap.data();
+
+    const checkSnap = await getDocs(collection(db, 'summer2026_checkins'));
+    const myCheckins = checkSnap.docs.map(d=>d.data())
+      .filter(d => d.empId === empId && (d.status==='通過'||d.status==='補登通過'));
+
+    const calc = calcFromCheckins(myCheckins);
+    const totalPtsCalc = calc.taskPts + (emp.inbodyPts||0) + (emp.rankPts||0);
+
+    const shouldHaveLetters = Math.floor(totalPtsCalc / PTS_PER_LETTER);
+    let letters = [...(emp.letters||[])];
+    if(letters.length > shouldHaveLetters) {
+      letters = letters.slice(0, shouldHaveLetters);
+    } else {
+      while(letters.length < shouldHaveLetters) {
+        const l = getRandomLetter([...letters]);
+        if(l) letters.push(l); else break;
+      }
+    }
+
+    const oldPts = emp.totalPts || 0;
+    resultEl.innerHTML = `<div class="status info">
+      ${emp.name}（${empId}）目前：${oldPts} 分 → 正確：${totalPtsCalc} 分（差 ${totalPtsCalc-oldPts}）<br>
+      飲食：${emp.weeklyDiet||0}→${calc.weeklyD}　運動：${emp.weeklySport||0}→${calc.weeklyS}　均衡：${emp.weeklyHealth||0}→${calc.weeklyHC}　連續：${emp.consecutiveDays||0}→${calc.consecutive}
+      <br><button class="btn-green" onclick="confirmFixSingle('${empId}')" style="margin-top:8px">✅ 確認寫入</button>
+    </div>`;
+
+    window._pendingSingleFix = {
+      empId, updates: {
+        taskPts: calc.taskPts, totalPts: totalPtsCalc,
+        weeklyDiet: calc.weeklyD, weeklySport: calc.weeklyS, weeklyHealth: calc.weeklyHC,
+        consecutiveDays: calc.consecutive, lastDietDate: calc.lastDietDate,
+        jellyCount: calc.jellyCount, lastWeek: Math.max(0, calc.lastWk), letters,
+      }
+    };
+  } catch(e) {
+    resultEl.innerHTML = `<div class="status err">錯誤：${e.message}</div>`;
+  }
+};
+
+window.confirmFixSingle = async function(empId) {
+  if(!window._pendingSingleFix || window._pendingSingleFix.empId !== empId) return;
+  try {
+    await updateDoc(doc(db, 'summer2026_employees', empId), window._pendingSingleFix.updates);
+    document.getElementById('single-result').innerHTML = '<div class="status ok">✅ 已修正完成！</div>';
+    window._pendingSingleFix = null;
+  } catch(e) {
+    document.getElementById('single-result').innerHTML = `<div class="status err">寫入失敗：${e.message}</div>`;
+  }
+};
+
+let auditResults = null;
+
+window.runFullAudit = async function() {
+  const summary = document.getElementById('summary');
+  const result = document.getElementById('result');
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = '';
+  summary.innerHTML = '<div class="status info">🔍 稽核中，請等待...</div>';
+  result.innerHTML = '';
+  
+  document.getElementById('btn-audit').disabled = true;
+  document.getElementById('btn-fix').disabled = true;
+
+  try {
+    log('📂 讀取員工資料...');
+    const empSnap = await getDocs(collection(db, 'summer2026_employees'));
+    log(`  → ${empSnap.docs.length} 筆員工資料`);
+
+    log('📂 讀取打卡紀錄...');
+    const checkSnap = await getDocs(collection(db, 'summer2026_checkins'));
+    const allCheckins = checkSnap.docs.map(d => d.data())
+      .filter(d => d.status === '通過' || d.status === '補登通過');
+    log(`  → ${checkSnap.docs.length} 筆打卡紀錄，其中 ${allCheckins.length} 筆通過`);
+
+    // 按員工分組打卡紀錄
+    const checkinsByEmp = {};
+    allCheckins.forEach(c => {
+      if(!checkinsByEmp[c.empId]) checkinsByEmp[c.empId] = [];
+      checkinsByEmp[c.empId].push(c);
+    });
+
+    log('🔢 計算每位員工正確積分...');
+    auditResults = [];
+    let correctCount = 0;
+    let diffCount = 0;
+
+    for(const d of empSnap.docs) {
+      const emp = d.data();
+      if(!emp.group) continue; // 跳過未註冊的
+
+      const myCheckins = checkinsByEmp[emp.empId] || [];
+      const calc = calcFromCheckins(myCheckins);
+      const totalPtsCalc = calc.taskPts + (emp.inbodyPts||0) + (emp.rankPts||0);
+
+      // 重算字母
+      const shouldHaveLetters = Math.floor(totalPtsCalc / PTS_PER_LETTER);
+      let letters = [...(emp.letters||[])];
+      if(letters.length > shouldHaveLetters) {
+        letters = letters.slice(0, shouldHaveLetters);
+      } else {
+        while(letters.length < shouldHaveLetters) {
+          const l = getRandomLetter([...letters]);
+          if(l) letters.push(l); else break;
+        }
+      }
+
+      const hasDiff = totalPtsCalc !== (emp.totalPts||0) || 
+                      calc.weeklyD !== (emp.weeklyDiet||0) ||
+                      calc.weeklyS !== (emp.weeklySport||0) ||
+                      calc.weeklyHC !== (emp.weeklyHealth||0) ||
+                      calc.consecutive !== (emp.consecutiveDays||0);
+
+      if(hasDiff) {
+        diffCount++;
+        log(`⚠️ ${emp.name}(${emp.empId}) 積分:${emp.totalPts||0}→${totalPtsCalc} 飲食:${emp.weeklyDiet||0}→${calc.weeklyD} 運動:${emp.weeklySport||0}→${calc.weeklyS} 均衡:${emp.weeklyHealth||0}→${calc.weeklyHC} 連續:${emp.consecutiveDays||0}→${calc.consecutive}`);
+      } else {
+        correctCount++;
+      }
+
+      auditResults.push({
+        ref: d.ref,
+        empId: emp.empId,
+        name: emp.name,
+        oldPts: emp.totalPts||0,
+        newPts: totalPtsCalc,
+        oldWeeklyD: emp.weeklyDiet||0, newWeeklyD: calc.weeklyD,
+        oldWeeklyS: emp.weeklySport||0, newWeeklyS: calc.weeklyS,
+        oldWeeklyH: emp.weeklyHealth||0, newWeeklyH: calc.weeklyHC,
+        oldConsec: emp.consecutiveDays||0, newConsec: calc.consecutive,
+        hasDiff,
+        // 要寫入的完整資料
+        updates: {
+          taskPts: calc.taskPts, totalPts: totalPtsCalc,
+          weeklyDiet: calc.weeklyD, weeklySport: calc.weeklyS, weeklyHealth: calc.weeklyHC,
+          consecutiveDays: calc.consecutive, lastDietDate: calc.lastDietDate,
+          jellyCount: calc.jellyCount, lastWeek: Math.max(0, calc.lastWk), letters,
+        }
+      });
+    }
+
+    log(`\n✅ 稽核完成：${correctCount} 正確，${diffCount} 有差異`);
+
+    summary.innerHTML = `
+      <div style="display:flex;gap:12px;margin:12px 0">
+        <div style="flex:1;background:#1a2a1a;border-radius:8px;padding:16px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:#66cc66">✅ ${correctCount}</div>
+          <div style="color:#888">積分正確</div>
+        </div>
+        <div style="flex:1;background:#2a1a1a;border-radius:8px;padding:16px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:#ff6666">⚠️ ${diffCount}</div>
+          <div style="color:#888">有差異</div>
+        </div>
+      </div>`;
+
+    if(diffCount > 0) {
+      const diffs = auditResults.filter(r => r.hasDiff);
+      result.innerHTML = `<table>
+        <tr><th>員工</th><th>目前積分</th><th>正確積分</th><th>差異</th><th>飲食(週)</th><th>運動(週)</th><th>均衡(週)</th><th>連續天</th></tr>
+        ${diffs.map(r => {
+          const d = r.newPts - r.oldPts;
+          return `<tr>
+            <td style="text-align:left">${r.name}<br><span style="color:#888">${r.empId}</span></td>
+            <td>${r.oldPts}</td>
+            <td style="color:#ffd700;font-weight:700">${r.newPts}</td>
+            <td class="${d>0?'diff-plus':d<0?'diff-minus':'diff-zero'}">${d>0?'+':''}${d}</td>
+            <td>${r.oldWeeklyD}→${r.newWeeklyD}</td>
+            <td>${r.oldWeeklyS}→${r.newWeeklyS}</td>
+            <td>${r.oldWeeklyH}→${r.newWeeklyH}</td>
+            <td>${r.oldConsec}→${r.newConsec}</td>
+          </tr>`;
+        }).join('')}
+      </table>`;
+      document.getElementById('btn-fix').disabled = false;
+    } else {
+      result.innerHTML = '<div class="status ok">🎉 所有員工積分都正確！不需要修正。</div>';
+    }
+  } catch(e) {
+    summary.innerHTML = `<div class="status err">❌ 稽核失敗：${e.message}</div>`;
+    log(`❌ 錯誤：${e.message}`);
+    console.error(e);
+  }
+  document.getElementById('btn-audit').disabled = false;
+};
+
+window.fixAll = async function() {
+  if(!auditResults) { alert('請先執行稽核'); return; }
+  if(!confirm('確定要修正所有有差異的員工積分嗎？')) return;
+
+  const diffs = auditResults.filter(r => r.hasDiff);
+  document.getElementById('btn-fix').disabled = true;
+  log('\n🔧 開始修正...');
+
+  let success = 0, fail = 0;
+  for(const r of diffs) {
+    try {
+      await updateDoc(r.ref, r.updates);
+      log(`  ✅ ${r.name}(${r.empId}) ${r.oldPts}→${r.newPts}`);
+      success++;
+    } catch(e) {
+      log(`  ❌ ${r.name}(${r.empId}) 失敗：${e.message}`);
+      fail++;
+    }
+  }
+
+  log(`\n🏁 修正完成：${success} 成功，${fail} 失敗`);
+  document.getElementById('summary').innerHTML = `<div class="status ${fail?'err':'ok'}">
+    🏁 修正完成：${success} 成功${fail?'，'+fail+' 失敗':''}
+    <br>請按「Step 3: 重新驗證」確認結果
+  </div>`;
+  document.getElementById('btn-verify').disabled = false;
+};
+</script>
+</body>
+</html>
