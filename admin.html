@@ -669,7 +669,7 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
 
     // ── 2. 呼叫統一計算引擎重算該員工所有數值 ──
     if(empId) {
-      await calcEmployeeScore(empId);
+      await calcEmployeeScore(empId, {checkinId: id, newStatus: status});
     }
 
     loadCheckins();
@@ -1356,17 +1356,21 @@ window.recalcAllFromAudit = async function() {
   }
 };
 
-// 單人重算引擎
-window.calcEmployeeScore = async function(empId) {
-  // 等待 Firebase 寫入同步
-  await new Promise(r => setTimeout(r, 300));
-  
+// 統一計算引擎：override = {checkinId, newStatus} 用來覆蓋剛更新的打卡紀錄狀態
+window.calcEmployeeScore = async function(empId, override) {
   const activityStart = new Date(settingsData.startDate||'2026-07-13');
   const sportPtsMap = [1,1,3,1,1,3,0];
   const empSnap = await getDoc(doc(db,'summer2026_employees',empId));
   const empData = empSnap.data();
   const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
-  const checkins = checkSnap.docs.map(d=>d.data())
+  const checkins = checkSnap.docs.map(d => {
+    const data = d.data();
+    // 如果是剛更新的那筆，用新的 status 覆蓋快取
+    if(override && d.id === override.checkinId) {
+      data.status = override.newStatus;
+    }
+    return data;
+  })
     .filter(d=>d.empId===empId&&(d.status==='通過'||d.status==='補登通過'))
     .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   let taskPts=0, weeklyD=0, weeklyS=0, weeklyH=0, weeklyHC=0, lastWk=-1;
@@ -1789,7 +1793,7 @@ window.deleteCheckinAndRecalc = async function(checkinId, empId, empName, taskTy
     await updateDoc(doc(db,'summer2026_checkins',checkinId), {
       status:'已刪除', deletedAt:new Date(), deletedBy:adminOperator
     });
-    await calcEmployeeScore(empId);
+    await calcEmployeeScore(empId, {checkinId: checkinId, newStatus: '已刪除'});
     alert(`✅ 已刪除並重算 ${empName} 的積分！`);
     loadCheckins();
   } catch(e) { alert('操作失敗：'+e.message); }
