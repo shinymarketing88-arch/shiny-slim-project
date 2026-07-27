@@ -643,16 +643,17 @@ window.quickReview = async function(id, status, empId, pts, taskType) {
   try {
     const ref = doc(db, 'summer2026_checkins', id);
 
-    // ── 防呆：審核通過前檢查當天同任務是否已有通過 ──
+    // ── 防呆：審核通過前檢查當天同任務是否已有通過（只查該員工）──
     if(status === '通過' && empId && taskType) {
       const checkinSnap0 = await getDoc(ref);
       const cData0 = checkinSnap0.data();
       const uploadDate0 = cData0?.createdAt?.seconds
         ? new Date(cData0.createdAt.seconds*1000).toDateString() : new Date().toDateString();
-      const allSnap = await getDocs(collection(db,'summer2026_checkins'));
+      const qDup = query(collection(db,'summer2026_checkins'), where('empId','==',empId));
+      const allSnap = await getDocs(qDup);
       const dupCheck = allSnap.docs.filter(d => {
         const dd = d.data();
-        return dd.empId===empId && dd.taskType===taskType && dd.status==='通過'
+        return dd.taskType===taskType && dd.status==='通過'
           && dd.createdAt?.seconds
           && new Date(dd.createdAt.seconds*1000).toDateString()===uploadDate0
           && d.id !== id;
@@ -1362,16 +1363,17 @@ window.calcEmployeeScore = async function(empId, override) {
   const sportPtsMap = [1,1,3,1,1,3,0];
   const empSnap = await getDoc(doc(db,'summer2026_employees',empId));
   const empData = empSnap.data();
-  const checkSnap = await getDocs(collection(db,'summer2026_checkins'));
+  // 只查這位員工的紀錄，大幅減少讀取量
+  const q = query(collection(db,'summer2026_checkins'), where('empId','==',empId));
+  const checkSnap = await getDocs(q);
   const checkins = checkSnap.docs.map(d => {
     const data = d.data();
-    // 如果是剛更新的那筆，用新的 status 覆蓋快取
     if(override && d.id === override.checkinId) {
       data.status = override.newStatus;
     }
     return data;
   })
-    .filter(d=>d.empId===empId&&(d.status==='通過'||d.status==='補登通過'))
+    .filter(d=>(d.status==='通過'||d.status==='補登通過'))
     .sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   let taskPts=0, weeklyD=0, weeklyS=0, weeklyH=0, weeklyHC=0, lastWk=-1;
   let consecutive=0, lastDietDate='', jellyCount=0;
