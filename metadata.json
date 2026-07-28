@@ -1,0 +1,6 @@
+{
+  "name": "ShapeShifter",
+  "description": "2026 夏季體態進化挑戰遊戲與主辦人後台管理系統",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
