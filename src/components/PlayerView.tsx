@@ -1226,39 +1226,208 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
       {/* 明細對話框 Modal */}
       {showScoreDetail && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-            <div className="flex justify-between items-center border-b border-purple-100 pb-2">
-              <h3 className="font-bold text-purple-950 text-sm">📊 我的打卡紀錄與得分狀態</h3>
-              <button onClick={() => setShowScoreDetail(false)} className="text-gray-400 font-bold text-xl">✕</button>
+          <div className="bg-white w-full max-w-md rounded-3xl p-5 space-y-4 max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-purple-100 pb-3 flex-shrink-0">
+              <div>
+                <h3 className="font-bold text-purple-950 text-sm flex items-center gap-1.5">
+                  <span>📊</span> 個人得分與打卡詳細紀錄
+                </h3>
+                <p className="text-[10px] text-purple-500 mt-0.5">按週別與關卡分類統計打卡狀況與得分</p>
+              </div>
+              <button
+                onClick={() => setShowScoreDetail(false)}
+                className="w-7 h-7 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-full flex items-center justify-center font-bold text-sm"
+              >
+                ✕
+              </button>
             </div>
-            <div className="space-y-2 text-xs">
-              <div className="bg-purple-50 p-3 rounded-xl flex justify-between font-bold text-purple-900">
-                <span>總打卡數：{myCheckins.length} 筆</span>
-                <span>成功審核分數：{totalPts} 分</span>
+
+            {/* Score Summary Box */}
+            <div className="bg-gradient-to-r from-purple-900 to-indigo-900 p-3.5 rounded-2xl text-white flex-shrink-0 shadow-sm space-y-2">
+              <div className="flex justify-between items-center text-xs border-b border-purple-700/60 pb-2">
+                <span className="text-purple-200">累計總積分</span>
+                <span className="text-lg font-extrabold text-amber-300">{totalPts} 分</span>
               </div>
-              <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
-                {myCheckins.map((c) => (
-                  <div key={c.id || Math.random()} className="py-2 flex justify-between items-center text-[11px]">
-                    <div>
-                      <span className="font-bold text-purple-950">{c.taskType}</span>
-                      <div className="text-[9px] text-gray-400">
-                        {c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW') : ''}
-                      </div>
-                    </div>
-                    <span
-                      className={`font-bold px-2 py-0.5 rounded text-[10px] ${
-                        c.status === '通過' || c.status === '補登通過'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : c.status === '待審核'
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-red-100 text-red-700'
-                      }`}
-                    >
-                      {c.status}
-                    </span>
+              <div className="grid grid-cols-3 gap-2 text-center text-[10px] pt-0.5">
+                <div className="bg-purple-950/50 p-1.5 rounded-xl border border-purple-800">
+                  <div className="text-purple-300">總打卡</div>
+                  <div className="font-bold text-amber-200 mt-0.5">{myCheckins.length} 筆</div>
+                </div>
+                <div className="bg-purple-950/50 p-1.5 rounded-xl border border-purple-800">
+                  <div className="text-purple-300">已通過</div>
+                  <div className="font-bold text-emerald-300 mt-0.5">
+                    {myCheckins.filter((c) => c.status === '通過' || c.status === '補登通過').length} 筆
                   </div>
-                ))}
+                </div>
+                <div className="bg-purple-950/50 p-1.5 rounded-xl border border-purple-800">
+                  <div className="text-purple-300">待審核</div>
+                  <div className="font-bold text-amber-300 mt-0.5">
+                    {myCheckins.filter((c) => c.status === '待審核').length} 筆
+                  </div>
+                </div>
               </div>
+            </div>
+
+            {/* Week-Grouped List */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {myCheckins.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-xs">
+                  <div className="text-3xl mb-2">📥</div>
+                  尚未有任何打卡紀錄，快到地圖頁面點選任務打卡吧！
+                </div>
+              ) : (
+                (() => {
+                  const startMs = new Date(startDateStr).getTime();
+                  // 整理打卡紀錄並按週次分類
+                  const groupedWeeks: Record<number, { weekPts: number; list: Checkin[] }> = {};
+
+                  myCheckins.forEach((c) => {
+                    const cDate = c.createdAt?.seconds
+                      ? new Date(c.createdAt.seconds * 1000)
+                      : new Date(c.createdAt || Date.now());
+                    const diffDays = Math.floor((cDate.getTime() - startMs) / (1000 * 60 * 60 * 24));
+                    const weekNum = diffDays >= 0 ? Math.floor(diffDays / 7) + 1 : 1;
+
+                    if (!groupedWeeks[weekNum]) {
+                      groupedWeeks[weekNum] = { weekPts: 0, list: [] };
+                    }
+                    groupedWeeks[weekNum].list.push(c);
+                    if (c.status === '通過' || c.status === '補登通過') {
+                      groupedWeeks[weekNum].weekPts += c.pts || 0;
+                    }
+                  });
+
+                  // 依週次倒序排列 (最新的週在最上方)
+                  const weekKeys = Object.keys(groupedWeeks)
+                    .map(Number)
+                    .sort((a, b) => b - a);
+
+                  return weekKeys.map((wk) => {
+                    const group = groupedWeeks[wk];
+
+                    // 統計本週各關卡打卡次數與得分
+                    const taskSummary: Record<string, { count: number; passedCount: number; pts: number }> = {};
+                    group.list.forEach((c) => {
+                      const tName = c.taskType || '一般打卡';
+                      if (!taskSummary[tName]) {
+                        taskSummary[tName] = { count: 0, passedCount: 0, pts: 0 };
+                      }
+                      taskSummary[tName].count += 1;
+                      if (c.status === '通過' || c.status === '補登通過') {
+                        taskSummary[tName].passedCount += 1;
+                        taskSummary[tName].pts += c.pts || 0;
+                      }
+                    });
+
+                    return (
+                      <div key={wk} className="bg-purple-50/70 border border-purple-100 rounded-2xl overflow-hidden shadow-2xs">
+                        {/* Week Header Bar */}
+                        <div className="bg-gradient-to-r from-purple-100 to-indigo-100 px-3 py-2 flex justify-between items-center border-b border-purple-200/60">
+                          <div className="font-bold text-purple-950 text-xs flex items-center gap-1.5">
+                            <span className="bg-purple-700 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full shadow-2xs">
+                              Week {wk}
+                            </span>
+                            <span>第 {wk} 週</span>
+                          </div>
+                          <div className="text-xs font-extrabold text-purple-800 bg-white/80 px-2 py-0.5 rounded-lg border border-purple-200/80">
+                            週計 <span className="text-amber-600">+{group.weekPts}</span> 分
+                          </div>
+                        </div>
+
+                        {/* 本週關卡得分小計獨立卡片 */}
+                        <div className="p-2.5 bg-white/90 border-b border-purple-100/80 space-y-1.5">
+                          <div className="text-[10px] font-bold text-purple-900 flex justify-between items-center">
+                            <span className="flex items-center gap-1">
+                              <span>🎯</span> 各關卡紀錄得分狀況
+                            </span>
+                            <span className="text-[9px] text-gray-400 font-normal">成功審核統計</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.entries(taskSummary).map(([tName, stat]) => (
+                              <div
+                                key={tName}
+                                className="bg-purple-50/90 hover:bg-purple-100/80 border border-purple-200/70 rounded-xl px-2.5 py-1 text-[11px] flex items-center gap-1.5 shadow-2xs"
+                              >
+                                <span className="font-bold text-purple-950">{tName}</span>
+                                <span className="text-purple-700 bg-purple-200/60 px-1.5 rounded-md text-[10px] font-bold">
+                                  {stat.passedCount} 次
+                                </span>
+                                <span className="font-extrabold text-amber-600 text-[11px]">
+                                  {stat.pts} 分
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* 本週個別打卡紀錄列表 */}
+                        <div className="p-2 space-y-1 bg-purple-50/30">
+                          <div className="text-[9px] font-bold text-purple-400 px-1 pt-0.5">打卡流水帳紀錄：</div>
+                          <div className="divide-y divide-purple-100/60">
+                            {group.list.map((c) => {
+                              const cDateStr = c.createdAt?.seconds
+                                ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW', {
+                                    month: 'numeric',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
+                                : '';
+                              const isPassed = c.status === '通過' || c.status === '補登通過';
+                              const isPending = c.status === '待審核';
+
+                              return (
+                                <div
+                                  key={c.id || Math.random()}
+                                  className="p-2 bg-white rounded-xl flex justify-between items-center gap-2 text-xs shadow-2xs my-1"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-purple-950 text-xs truncate">
+                                        {c.taskType}
+                                      </span>
+                                      {c.isMakeup && (
+                                        <span className="text-[8px] bg-amber-100 text-amber-800 px-1 rounded font-bold">
+                                          補登
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[9px] text-gray-400 mt-0.5">
+                                      {cDateStr}
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
+                                    <div className="flex items-center gap-1.5">
+                                      {isPassed && (
+                                        <span className="font-extrabold text-emerald-600 text-xs">
+                                          +{c.pts || 0} 分
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`font-bold px-2 py-0.5 rounded-full text-[9px] ${
+                                          isPassed
+                                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300/50'
+                                            : isPending
+                                            ? 'bg-amber-100 text-amber-700 border border-amber-300/50'
+                                            : 'bg-red-100 text-red-700 border border-red-300/50'
+                                        }`}
+                                      >
+                                        {c.status}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
+              )}
             </div>
           </div>
         </div>
