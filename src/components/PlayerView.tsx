@@ -1062,6 +1062,8 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
         </div>
       )}
 
+
+
       {/* 個人 Profile Tab */}
       {activeTab === 'me' && (
         <div className="p-3 space-y-4">

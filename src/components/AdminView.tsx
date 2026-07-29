@@ -45,6 +45,9 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
   const [completionFilter, setCompletionFilter] = useState('all');
   const [spellFilter, setSpellFilter] = useState('all');
 
+  // Quick Review Lightbox Modal State
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
   // Edit Employee Modal
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const [editTotalPts, setEditTotalPts] = useState(0);
@@ -349,14 +352,15 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
     downloadCSV(rows, '夏日挑戰_InBody體態數據表');
   };
 
-  // 4. 批量全選一鍵通過審核
+  // 4. 批量全選一鍵通過審核 (支援依關卡)
   const handleBatchApprovePending = async () => {
+    const taskTitle = checkinTaskFilter ? `【${checkinTaskFilter}】` : '所有關卡';
     const pendingList = filteredCheckins.filter((c) => c.status === '待審核');
     if (pendingList.length === 0) {
-      alert('目前無可審核的「待審核」打卡紀錄！');
+      alert(`目前 ${taskTitle} 無任何「待審核」的打卡紀錄！`);
       return;
     }
-    if (!confirm(`確定要將目前的 ${pendingList.length} 筆「待審核」紀錄批量一次性標記為「通過」嗎？`)) return;
+    if (!confirm(`確定要將 ${taskTitle} 目前顯示的 ${pendingList.length} 筆「待審核」紀錄，一次性全部標記為「通過」嗎？`)) return;
 
     try {
       const affectedEmps = new Set<string>();
@@ -375,7 +379,7 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
         await recalcAndUpdateEmp(empId);
       }
 
-      alert(`✅ 已成功一鍵通過 ${pendingList.length} 筆打卡審核！並自動更新同仁總積分與連鎖天數。`);
+      alert(`✅ 已成功一鍵通過 ${taskTitle} 共 ${pendingList.length} 筆打卡審核！並自動更新同仁總積分。`);
       fetchData();
     } catch (e: any) {
       alert('批量審核失敗：' + e.message);
@@ -571,60 +575,103 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
         {/* 2. 打卡審核 Checkins */}
         {activeTab === 'checkins' && (
           <div className="space-y-4">
+            {/* 頁面標題與動作 */}
             <div className="flex justify-between items-center flex-wrap gap-2">
               <div>
-                <h2 className="text-lg font-bold text-[#ffd700]">📋 打卡紀錄與審核</h2>
-                <p className="text-xs text-[#8888aa] mt-0.5">提供關鍵字/日期多重篩選、一鍵批量審核與打卡紀錄 CSV 匯出</p>
+                <h2 className="text-lg font-bold text-[#ffd700] flex items-center gap-2">
+                  <span>📋</span> 打卡審核中心
+                </h2>
+                <p className="text-xs text-[#8888aa] mt-0.5">
+                  支援關主專屬分頁、圖片微縮點擊即審、連續快速審核 Modal 及關卡批量審核
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleBatchApprovePending}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded text-xs shadow flex items-center gap-1"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center gap-1.5"
                 >
-                  ⚡ 一鍵全選通過待審核
+                  ⚡ 一鍵通過
+                  <span className="bg-emerald-900/60 px-1.5 py-0.5 rounded text-[10px] text-emerald-200 font-normal">
+                    {checkinTaskFilter ? `【${checkinTaskFilter}】` : '全部關卡'}
+                  </span>
+                  ({filteredCheckins.filter((c) => c.status === '待審核').length} 筆)
                 </button>
                 <button
                   onClick={exportCheckinsCSV}
-                  className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded text-xs shadow flex items-center gap-1"
+                  className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white font-bold rounded-lg text-xs shadow flex items-center gap-1"
                 >
-                  📥 匯出打卡紀錄 CSV
+                  📥 匯出 CSV
                 </button>
-                <button onClick={fetchData} className="px-3 py-1.5 bg-[#4a3a9a] text-white rounded text-xs">
+                <button onClick={fetchData} className="px-3 py-1.5 bg-[#4a3a9a] hover:bg-[#5a4aaa] text-white rounded-lg text-xs">
                   🔄 重新整理
                 </button>
               </div>
             </div>
 
-            <div className="flex gap-2 flex-wrap items-center">
-              <select
-                value={checkinStatusFilter}
-                onChange={(e) => setCheckinStatusFilter(e.target.value)}
-                className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white"
-              >
-                <option value="待審核">⏳ 待審核</option>
-                <option value="全部">全部狀態</option>
-                <option value="通過">✅ 通過/補登</option>
-                <option value="駁回">❌ 駁回</option>
-              </select>
+            {/* 關主專屬：三大關卡快捷分頁頁籤 */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 pt-1">
+              {[
+                { id: '', label: '🌐 全部關卡', icon: '✨' },
+                { id: '飲食打卡', label: '🥗 飲食打卡', icon: '🥗' },
+                { id: '健康飲食', label: '🏅 健康飲食', icon: '🏅' },
+                { id: '運動打卡', label: '🏋️ 運動打卡', icon: '🏋️' },
+                { id: '照片心得', label: '📸 照片心得', icon: '📸' },
+              ].map((taskTab) => {
+                const isSelected = checkinTaskFilter === taskTab.id;
+                const pendingCount = checkins.filter(
+                  (c) => c.status === '待審核' && (!taskTab.id || c.taskType === taskTab.id)
+                ).length;
 
-              <select
-                value={checkinTaskFilter}
-                onChange={(e) => setCheckinTaskFilter(e.target.value)}
-                className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white"
-              >
-                <option value="">所有任務類型</option>
-                <option value="飲食打卡">🥗 飲食打卡</option>
-                <option value="健康飲食">🏅 健康飲食</option>
-                <option value="運動打卡">🏋️ 運動打卡</option>
-                <option value="照片心得">📸 照片心得</option>
-              </select>
+                return (
+                  <button
+                    key={taskTab.id}
+                    onClick={() => setCheckinTaskFilter(taskTab.id)}
+                    className={`p-2.5 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-gradient-to-br from-[#2a2a5a] to-[#1e1e3e] border-[#ffd700] text-white shadow-lg ring-1 ring-[#ffd700]'
+                        : 'bg-[#1a1a2e] border-[#2a2a4a] text-[#8888aa] hover:bg-[#252545] hover:text-white'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center text-xs font-bold">
+                      <span>{taskTab.label}</span>
+                      {pendingCount > 0 ? (
+                        <span className="bg-amber-500 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full animate-pulse">
+                          {pendingCount} 待審
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-gray-500">已完審</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] mt-1 opacity-70">
+                      {taskTab.id ? '關主快速審核' : '全關卡匯總清單'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 輔助篩選列 */}
+            <div className="flex gap-2 flex-wrap items-center bg-[#1a1a2e] p-2.5 rounded-xl border border-[#2a2a4a]">
+              <div className="flex items-center gap-1.5 text-xs text-[#8888aa]">
+                <span>審核狀態：</span>
+                <select
+                  value={checkinStatusFilter}
+                  onChange={(e) => setCheckinStatusFilter(e.target.value)}
+                  className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-2.5 py-1 text-xs text-white"
+                >
+                  <option value="待審核">⏳ 待審核</option>
+                  <option value="全部">全部狀態</option>
+                  <option value="通過">✅ 通過/補登</option>
+                  <option value="駁回">❌ 駁回</option>
+                </select>
+              </div>
 
               <input
                 type="text"
                 placeholder="🔍 搜尋員工編號/姓名"
                 value={searchEmp}
                 onChange={(e) => setSearchEmp(e.target.value)}
-                className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white w-44"
+                className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-2.5 py-1 text-xs text-white w-44"
               />
 
               <div className="flex items-center gap-1 text-xs text-[#8888aa]">
@@ -644,36 +691,76 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
                   </button>
                 )}
               </div>
+
+              <div className="ml-auto text-xs text-purple-300 font-bold">
+                當前顯示：{filteredCheckins.length} 筆
+              </div>
             </div>
 
-            <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden">
+            {/* 打卡列表 Table */}
+            <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden shadow-lg">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#2a2a4a] text-[#8888aa] border-b border-[#2a2a4a]">
+                    <th className="p-3 w-16 text-center">截圖預覽</th>
                     <th className="p-3">時間</th>
                     <th className="p-3">員工</th>
-                    <th className="p-3">任務</th>
+                    <th className="p-3">關卡類型</th>
                     <th className="p-3">狀態</th>
-                    <th className="p-3">操作</th>
+                    <th className="p-3 text-right">即時審核操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2a2a4a]">
                   {filteredCheckins.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-4 text-center text-[#8888aa]">
-                        尚無打卡資料
+                      <td colSpan={6} className="p-8 text-center text-[#8888aa]">
+                        <div className="text-2xl mb-1">🔍</div>
+                        尚無符合條件的打卡紀錄
                       </td>
                     </tr>
                   ) : (
-                    filteredCheckins.map((c) => (
-                      <tr key={c.id}>
-                        <td className="p-3 text-[#8888aa]">
-                          {c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW') : ''}
+                    filteredCheckins.map((c, index) => (
+                      <tr key={c.id || index} className="hover:bg-[#252545]/60 transition-colors">
+                        {/* 截圖微縮圖 */}
+                        <td className="p-2 text-center">
+                          {c.fileUrl ? (
+                            <div
+                              onClick={() => setLightboxIndex(index)}
+                              className="relative group w-12 h-12 mx-auto rounded-lg overflow-hidden border border-purple-500/40 cursor-pointer shadow-sm hover:border-amber-400 transition-all"
+                            >
+                              <img
+                                src={c.fileUrl}
+                                alt="打卡截圖"
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[9px] text-white font-bold transition-opacity">
+                                大圖
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-gray-500">無截圖</span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-[#8888aa] whitespace-nowrap">
+                          {c.createdAt?.seconds
+                            ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW', {
+                                month: 'numeric',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : ''}
                         </td>
                         <td className="p-3 font-bold">
-                          {c.empName} <span className="text-[10px] text-[#8888aa]">({c.empId})</span>
+                          <div className="text-white text-xs">{c.empName}</div>
+                          <div className="text-[10px] text-[#8888aa]">{c.empId}</div>
                         </td>
-                        <td className="p-3">{c.taskType}</td>
+                        <td className="p-3">
+                          <span className="bg-purple-950/80 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                            {c.taskType}
+                          </span>
+                        </td>
                         <td className="p-3">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -687,28 +774,28 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
                             {c.status}
                           </span>
                         </td>
-                        <td className="p-3 space-x-2">
+
+                        {/* 操作按鈕 */}
+                        <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
                           {c.fileUrl && (
-                            <a
-                              href={c.fileUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-2 py-1 bg-purple-900 text-purple-200 rounded text-[10px]"
+                            <button
+                              onClick={() => setLightboxIndex(index)}
+                              className="px-2.5 py-1 bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-700/60 rounded-md text-[11px] font-bold transition-all"
                             >
-                              📷 截圖
-                            </a>
+                              🔍 看大圖連續審核
+                            </button>
                           )}
                           {c.status === '待審核' && (
                             <>
                               <button
                                 onClick={() => handleQuickReview(c.id!, '通過', c.empId)}
-                                className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold"
+                                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded-md text-[11px] font-bold shadow-sm transition-all"
                               >
                                 ✅ 通過
                               </button>
                               <button
                                 onClick={() => handleQuickReview(c.id!, '駁回', c.empId)}
-                                className="px-2 py-1 bg-red-700 hover:bg-red-600 text-white rounded text-[10px] font-bold"
+                                className="px-2.5 py-1 bg-red-700 hover:bg-red-600 text-white rounded-md text-[11px] font-bold shadow-sm transition-all"
                               >
                                 ❌ 駁回
                               </button>
@@ -1448,6 +1535,185 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
             </div>
           </div>
         </div>
+      )}
+
+      {/* 連續快速審核 Lightbox Modal */}
+      {lightboxIndex !== null && filteredCheckins[lightboxIndex] && (
+        (() => {
+          const activeC = filteredCheckins[lightboxIndex];
+          const isPending = activeC.status === '待審核';
+
+          const handleLightboxReview = async (status: '通過' | '駁回') => {
+            if (!activeC.id) return;
+            await handleQuickReview(activeC.id, status, activeC.empId);
+
+            // 尋找下一個「待審核」紀錄
+            const nextPendingIndex = filteredCheckins.findIndex(
+              (item, idx) => idx > lightboxIndex && item.status === '待審核'
+            );
+
+            if (nextPendingIndex !== -1) {
+              setLightboxIndex(nextPendingIndex);
+            } else if (lightboxIndex + 1 < filteredCheckins.length) {
+              setLightboxIndex(lightboxIndex + 1);
+            } else {
+              setLightboxIndex(null);
+            }
+          };
+
+          return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 z-50">
+              <div className="bg-[#1a1a2e] border border-[#3a3a6a] w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+                {/* Modal Header */}
+                <div className="bg-[#2a2a4a] px-5 py-3.5 flex justify-between items-center border-b border-[#3a3a6a] flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-amber-400 font-bold text-sm">📸 快速圖片審核</span>
+                    <span className="text-[10px] bg-purple-900/80 text-purple-200 border border-purple-700 px-2 py-0.5 rounded-full">
+                      第 {lightboxIndex + 1} / {filteredCheckins.length} 筆
+                    </span>
+                    {checkinTaskFilter && (
+                      <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold">
+                        當前關卡：{checkinTaskFilter}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setLightboxIndex(null)}
+                    className="w-8 h-8 rounded-full bg-[#1a1a2e] hover:bg-purple-900 text-gray-300 flex items-center justify-center font-bold transition-all text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-4 md:p-6 flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                  {/* 大圖預覽 */}
+                  <div className="md:col-span-7 flex flex-col items-center justify-center bg-black/60 rounded-2xl p-2 border border-[#2a2a4a] min-h-[280px] max-h-[500px]">
+                    {activeC.fileUrl ? (
+                      <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-xl group">
+                        <img
+                          src={activeC.fileUrl}
+                          alt="截圖"
+                          className="max-h-[460px] w-auto object-contain rounded-xl"
+                        />
+                        <a
+                          href={activeC.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="absolute bottom-3 right-3 bg-black/70 hover:bg-black text-amber-300 text-[11px] font-bold px-3 py-1.5 rounded-lg border border-amber-500/50 shadow transition-all flex items-center gap-1"
+                        >
+                          🔗 開啟原圖
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-center py-12">
+                        <div className="text-4xl mb-2">🖼️</div>
+                        此打卡無上傳截圖
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 右側審核與詳細資訊 */}
+                  <div className="md:col-span-5 space-y-4 flex flex-col justify-between h-full">
+                    <div className="space-y-3 bg-[#22223a] p-4 rounded-2xl border border-[#333355]">
+                      <div className="flex justify-between items-start border-b border-[#333355] pb-2.5">
+                        <div>
+                          <div className="text-lg font-bold text-white flex items-center gap-1.5">
+                            {activeC.empName}
+                            <span className="text-xs text-amber-300 font-normal">({activeC.empId})</span>
+                          </div>
+                          <div className="text-[11px] text-[#8888aa] mt-0.5">
+                            時間：
+                            {activeC.createdAt?.seconds
+                              ? new Date(activeC.createdAt.seconds * 1000).toLocaleString('zh-TW')
+                              : '未知'}
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                            activeC.status === '通過' || activeC.status === '補登通過'
+                              ? 'bg-emerald-950 text-emerald-400 border border-emerald-700'
+                              : activeC.status === '待審核'
+                              ? 'bg-amber-950 text-amber-400 border border-amber-700 animate-pulse'
+                              : 'bg-red-950 text-red-400 border border-red-700'
+                          }`}
+                        >
+                          {activeC.status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="flex justify-between items-center bg-[#1a1a2e] p-2 rounded-xl">
+                          <span className="text-[#8888aa]">打卡關卡</span>
+                          <span className="font-bold text-amber-300 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800">
+                            {activeC.taskType}
+                          </span>
+                        </div>
+                        {activeC.isMakeup && (
+                          <div className="flex justify-between items-center bg-amber-950/40 p-2 rounded-xl border border-amber-900/50 text-amber-300">
+                            <span>補登原因</span>
+                            <span className="font-bold">{activeC.makeupReason || '主辦人補登'}</span>
+                          </div>
+                        )}
+                        {activeC.reviewedBy && (
+                          <div className="flex justify-between items-center text-[10px] text-gray-400 px-1 pt-1">
+                            <span>前次審核人：</span>
+                            <span>{activeC.reviewedBy}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 審核核心按鈕區 */}
+                    <div className="space-y-2 pt-2">
+                      <div className="text-[11px] text-center text-purple-200 font-bold">
+                        {isPending ? '⚡ 點擊下方審核（自動跳下一筆）' : '此筆紀錄已審核完畢'}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => handleLightboxReview('通過')}
+                          className="py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-2xl shadow-lg transition-all text-sm flex items-center justify-center gap-1.5 active:scale-95"
+                        >
+                          <span>✅</span> 通過 (+1~2分)
+                        </button>
+                        <button
+                          onClick={() => handleLightboxReview('駁回')}
+                          className="py-3.5 bg-gradient-to-r from-red-700 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white font-extrabold rounded-2xl shadow-lg transition-all text-sm flex items-center justify-center gap-1.5 active:scale-95"
+                        >
+                          <span>❌</span> 駁回
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 上下筆切換按鈕 */}
+                    <div className="flex justify-between items-center border-t border-[#3a3a6a] pt-3 text-xs">
+                      <button
+                        disabled={lightboxIndex === 0}
+                        onClick={() => setLightboxIndex(lightboxIndex - 1)}
+                        className="px-3 py-1.5 bg-[#2a2a4a] hover:bg-[#3a3a5a] disabled:opacity-40 disabled:hover:bg-[#2a2a4a] text-white rounded-xl transition-all font-bold flex items-center gap-1"
+                      >
+                        ◀ 上一筆
+                      </button>
+                      <button
+                        onClick={() => setLightboxIndex(null)}
+                        className="text-gray-400 hover:text-white text-xs underline"
+                      >
+                        關閉預覽
+                      </button>
+                      <button
+                        disabled={lightboxIndex >= filteredCheckins.length - 1}
+                        onClick={() => setLightboxIndex(lightboxIndex + 1)}
+                        className="px-3 py-1.5 bg-[#2a2a4a] hover:bg-[#3a3a5a] disabled:opacity-40 disabled:hover:bg-[#2a2a4a] text-white rounded-xl transition-all font-bold flex items-center gap-1"
+                      >
+                        下一筆 ▶
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()
       )}
     </div>
   );
