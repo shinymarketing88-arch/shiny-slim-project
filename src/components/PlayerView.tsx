@@ -379,6 +379,10 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
     ? Math.min(100, Math.max(0, Math.round(((inbodyTargetVal - inbodyCurrentGap) / inbodyTargetVal) * 100)))
     : 0;
 
+  // 計算精確個人統計資料（包含連續飲食打卡天數與馬甲果凍數）
+  const approvedCheckins = myCheckins.filter((c) => c.status === '通過' || c.status === '補登通過' || c.status === 'approved');
+  const userStats = calculateEmployeeStats(empData || {}, approvedCheckins, startDateStr);
+
   // 檢查完賽資格（總積分 ≥ 45 分 且 照片心得 / 變身日記 已審核通過）
   const photoApproved = myCheckins.some(
     (c) => c.taskType === '照片心得' && (c.status === '通過' || c.status === '補登通過')
@@ -831,8 +835,17 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-xl">🥗</div>
                   <div>
-                    <div className="text-xs font-bold text-purple-950">【今日熱量】飲食打卡</div>
-                    <div className="text-[10px] text-purple-600 mt-0.5">WonderFood-AI 日統計截圖 +1分</div>
+                    <div className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <span>【今日熱量】飲食打卡</span>
+                      {userStats.consecutiveDays > 0 && (
+                        <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-full border border-amber-200">
+                          🔥 連續 {userStats.consecutiveDays} 天
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-purple-600 mt-0.5">
+                      WonderFood-AI 日統計截圖 +1分（每連續 10 天贈送馬甲果凍 1 包）
+                    </div>
                   </div>
                 </div>
                 <button
@@ -924,6 +937,68 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
               >
                 {photoStatus === 'done' ? '✅ 已完成' : photoStatus === 'pending' ? '⏳ 審核中' : '▶ 上傳'}
               </button>
+            </div>
+          </div>
+
+          {/* 🧡 馬甲果凍 (飲食連續打卡獎勵) */}
+          <div className="bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 border border-amber-200 p-4 rounded-2xl shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                <span>🧡</span> 馬甲果凍 (飲食連續打卡獎勵)
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
+                連續飲食 {userStats.consecutiveDays} 天
+              </span>
+            </div>
+
+            <div className="text-[11px] text-amber-800 leading-relaxed mb-3">
+              連續上傳飲食日誌每滿 10 天即可獲得 1 包馬甲果凍（最多 4 包）。達標後由主辦人審核發放。
+            </div>
+
+            {/* 進度條與門檻標記 */}
+            <div className="space-y-1.5 mb-3 bg-white/70 p-2.5 rounded-xl border border-amber-100">
+              <div className="flex justify-between items-center text-[10px] font-bold text-amber-900">
+                <span>連續打卡目標進度</span>
+                <span>{userStats.consecutiveDays} / 40 天</span>
+              </div>
+              <div className="w-full bg-amber-100 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-amber-400 to-orange-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, (userStats.consecutiveDays / 40) * 100)}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-4 gap-1 text-[9px] text-center pt-1 font-bold text-amber-800">
+                <div className={userStats.consecutiveDays >= 10 ? 'text-amber-900 font-extrabold' : 'text-gray-400'}>
+                  10天 (1包) {userStats.consecutiveDays >= 10 ? '✓' : ''}
+                </div>
+                <div className={userStats.consecutiveDays >= 20 ? 'text-amber-900 font-extrabold' : 'text-gray-400'}>
+                  20天 (2包) {userStats.consecutiveDays >= 20 ? '✓' : ''}
+                </div>
+                <div className={userStats.consecutiveDays >= 30 ? 'text-amber-900 font-extrabold' : 'text-gray-400'}>
+                  30天 (3包) {userStats.consecutiveDays >= 30 ? '✓' : ''}
+                </div>
+                <div className={userStats.consecutiveDays >= 40 ? 'text-amber-900 font-extrabold' : 'text-gray-400'}>
+                  40天 (4包) {userStats.consecutiveDays >= 40 ? '✓' : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* 果凍數量狀態 */}
+            <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+              <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
+                <div className="text-gray-500 font-medium">應得果凍</div>
+                <div className="text-base font-extrabold text-amber-600 mt-0.5">{userStats.jellyCount} 包</div>
+              </div>
+              <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
+                <div className="text-gray-500 font-medium">已領取發放</div>
+                <div className="text-base font-extrabold text-emerald-600 mt-0.5">{empData?.jellyDelivered || 0} 包</div>
+              </div>
+              <div className="bg-white/80 p-2 rounded-xl border border-amber-100">
+                <div className="text-gray-500 font-medium">待發放</div>
+                <div className="text-base font-extrabold text-orange-600 mt-0.5">
+                  {Math.max(0, userStats.jellyCount - (empData?.jellyDelivered || 0))} 包
+                </div>
+              </div>
             </div>
           </div>
 
