@@ -51,6 +51,7 @@ export interface Checkin {
   reviewedAt?: any;
   reviewedBy?: string;
   isMakeup?: boolean;
+  isCrit?: boolean;
   makeupDate?: string;
   makeupReason?: string;
   makeupBy?: string;
