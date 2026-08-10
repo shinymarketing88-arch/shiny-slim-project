@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { db, storage } from '../lib/firebase';
 import { doc, getDoc, updateDoc, collection, addDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Employee, Checkin, Team } from '../types';
-import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD } from '../lib/calcEngine';
+import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD, attachCalculatedPointsToCheckins, CalculatedCheckin } from '../lib/calcEngine';
 import { HeroAvatarSVG } from './HeroAvatarSVG';
 
 const CHARS = {
@@ -94,6 +94,7 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
 
   const [toastMsg, setToastMsg] = useState('');
   const [showScoreDetail, setShowScoreDetail] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showSpellModal, setShowSpellModal] = useState(false);
   const [completionChoice, setCompletionChoice] = useState('');
@@ -185,11 +186,29 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
     fetchTeam();
   }, [empData?.empId, setupStep]);
 
-  // 載入排行榜
+  // 載入排行榜 (包含全體即時精確動態計算)
   const loadRankings = async () => {
     try {
       const snap = await getDocs(collection(db, 'summer2026_employees'));
-      let list = snap.docs.map((d) => d.data() as Employee).filter((e) => e.group && e.nickname);
+      const cSnap = await getDocs(collection(db, 'summer2026_checkins'));
+      const allCheckins = cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Checkin));
+
+      let list = snap.docs.map((d) => {
+        const emp = { empId: d.id, ...d.data() } as Employee;
+        const myApproved = allCheckins.filter(
+          (c) => c.empId === emp.empId && (c.status === '通過' || c.status === '補登通過')
+        );
+        const calc = calculateEmployeeStats(emp, myApproved, startDateStr);
+        return {
+          ...emp,
+          taskPts: calc.taskPts,
+          totalPts: calc.totalPts,
+          weeklyDiet: calc.weeklyDiet,
+          weeklySport: calc.weeklySport,
+          weeklyHealth: calc.weeklyHealth,
+        };
+      }).filter((e) => e.group && e.nickname);
+
       if (rankFilter === 'fat' || rankFilter === 'muscle') {
         list = list.filter((e) => e.group === rankFilter);
       } else if (rankFilter === 'team' && myTeam) {
@@ -324,8 +343,46 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
   const currentDay = Math.min(totalDays, Math.max(1, rawDiffDays));
   const dayProgressPct = Math.min(100, Math.max(0, Math.round((currentDay / totalDays) * 100)));
 
-  // 角色身材動態進補與轉變階段計算 (0-29胖胖肉肉 ➔ 30-59輕盈結實 ➔ 60-99爆發筋肉 ➔ 100+黃金傳奇)
-  const totalPts = empData?.totalPts || 0;
+  // 動態即時精確計算分數 (確保打卡與每週規則 100% 精確連動)
+  const approvedCheckins = useMemo(() => {
+    return myCheckins.filter((c) => c.status === '通過' || c.status === '補登通過');
+  }, [myCheckins]);
+
+  const computedStats = useMemo(() => {
+    return calculateEmployeeStats(empData || {}, approvedCheckins, startDateStr);
+  }, [empData, approvedCheckins, startDateStr]);
+
+  const totalPts = computedStats.totalPts;
+
+  // 自動連動修復數據庫 (若 Firestore 文件內儲存的總分與即時動態精算不符，自動同步連動)
+  useEffect(() => {
+    if (
+      empData?.empId &&
+      setupStep === 0 &&
+      computedStats.totalPts !== undefined &&
+      (computedStats.totalPts !== empData.totalPts || computedStats.taskPts !== empData.taskPts)
+    ) {
+      updateDoc(doc(db, 'summer2026_employees', empData.empId), {
+        taskPts: computedStats.taskPts,
+        totalPts: computedStats.totalPts,
+        weeklyDiet: computedStats.weeklyDiet,
+        weeklySport: computedStats.weeklySport,
+        weeklyHealth: computedStats.weeklyHealth,
+        consecutiveDays: computedStats.consecutiveDays,
+        lastDietDate: computedStats.lastDietDate,
+        jellyCount: computedStats.jellyCount,
+        lastWeek: computedStats.lastWeek,
+        letters: computedStats.letters,
+      }).catch((err) => console.error('Auto sync score err:', err));
+    }
+  }, [
+    empData?.empId,
+    setupStep,
+    empData?.totalPts,
+    empData?.taskPts,
+    computedStats,
+  ]);
+
   const getPhysiqueStage = (pts: number) => {
     if (pts >= 100) {
       return {
@@ -380,8 +437,7 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
     : 0;
 
   // 計算精確個人統計資料（包含連續飲食打卡天數與馬甲果凍數）
-  const approvedCheckins = myCheckins.filter((c) => c.status === '通過' || c.status === '補登通過' || c.status === 'approved');
-  const userStats = calculateEmployeeStats(empData || {}, approvedCheckins, startDateStr);
+  const userStats = computedStats;
 
   // 檢查完賽資格（總積分 ≥ 45 分 且 照片心得 / 變身日記 已審核通過）
   const photoApproved = myCheckins.some(
@@ -893,7 +949,7 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                   <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-xl">🏋️</div>
                   <div>
                     <div className="text-xs font-bold text-purple-950">【汗水閃耀】運動打卡</div>
-                    <div className="text-[10px] text-purple-600 mt-0.5">週積分：1/1/3/1/1/3/0（第3、6次爆擊+3）</div>
+                    <div className="text-[10px] text-purple-600 mt-0.5">週積分：1/1/3/1/1/3/0（第3、6次爆擊+3，每週最高10分）</div>
                   </div>
                 </div>
                 <button
@@ -1017,10 +1073,14 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
             </div>
             {isCompletionEligible && (
               <button
-                onClick={() => setShowCompletionModal(true)}
-                className="mt-3 w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs rounded-xl shadow-md active:scale-95"
+                onClick={() => {
+                  setCompletionChoice(empData.completionReward || 'm2-超能水光凍*10入');
+                  setShowCompletionModal(true);
+                }}
+                className="mt-3 w-full py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xs rounded-xl shadow-md active:scale-95 flex items-center justify-center gap-1.5"
               >
-                {empData.completionReward ? `✅ 已選擇：${empData.completionReward}` : '🎁 點此選擇完賽禮 (3選1)'}
+                <span>🎁</span>
+                <span>{empData.completionReward ? `✅ 已選擇：${empData.completionReward} (點擊可修改)` : '點此選擇完賽禮 (3選1)'}</span>
               </button>
             )}
           </div>
@@ -1037,34 +1097,61 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
             </div>
             <div className="text-[10px] text-purple-600 mb-3">集齊全部 11 個字母解鎖特殊 Bonus 完賽禮物！</div>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {TARGET_WORD.split('').map((char, idx) => {
-                const hasChar = empData.letters?.includes(char);
-                return (
-                  <div
-                    key={idx}
-                    className={`w-7 h-9 rounded-xl flex items-center justify-center font-bold text-sm border transition-all duration-300 transform ${
-                      hasChar
-                        ? 'bg-gradient-to-b from-purple-600 to-indigo-700 text-amber-300 border-amber-400 shadow-md scale-105 animate-pulse'
-                        : 'bg-purple-50 text-gray-300 border-purple-100 opacity-60'
-                    }`}
-                  >
-                    {hasChar ? char : '?'}
-                  </div>
-                );
-              })}
+              {(() => {
+                const activeLetters = userStats?.letters || empData?.letters || [];
+                const lettersCopy = [...activeLetters];
+                return TARGET_WORD.split('').map((char, idx) => {
+                  const foundIndex = lettersCopy.indexOf(char);
+                  const hasChar = foundIndex !== -1;
+                  if (hasChar) {
+                    lettersCopy.splice(foundIndex, 1);
+                  }
+                  return (
+                    <div
+                      key={idx}
+                      className={`w-7 h-9 rounded-xl flex items-center justify-center font-bold text-sm border transition-all duration-300 transform ${
+                        hasChar
+                          ? 'bg-gradient-to-b from-purple-600 to-indigo-700 text-amber-300 border-amber-400 shadow-md scale-105 animate-pulse'
+                          : 'bg-purple-50 text-gray-300 border-purple-100 opacity-60'
+                      }`}
+                    >
+                      {hasChar ? char : '?'}
+                    </div>
+                  );
+                });
+              })()}
             </div>
-            <div className="flex justify-between items-center text-[10px] text-gray-500 pt-1">
-              <span>已解鎖：<strong className="text-purple-900 font-bold">{(empData.letters || []).length} / 11</strong> 個字母</span>
-              {empData.spellReward ? (
-                <span className="text-emerald-600 font-bold">已兌換：{empData.spellReward}</span>
-              ) : (empData.letters || []).length >= 11 ? (
-                <button
-                  onClick={() => setShowSpellModal(true)}
-                  className="px-2 py-1 bg-amber-500 text-white font-bold rounded-lg text-[10px] animate-bounce shadow"
-                >
-                  🎉 領取拼字獎勵
-                </button>
-              ) : null}
+            <div className="flex justify-between items-center text-[10px] text-gray-500 pt-1 flex-wrap gap-2">
+              {(() => {
+                const activeLetters = userStats?.letters || empData?.letters || [];
+                const isFull = activeLetters.length >= 11;
+                return (
+                  <>
+                    <span>已解鎖：<strong className="text-purple-900 font-bold">{activeLetters.length} / 11</strong> 個字母</span>
+                    {empData?.spellReward ? (
+                      <button
+                        onClick={() => {
+                          setSpellChoice(empData.spellReward || '【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)');
+                          setShowSpellModal(true);
+                        }}
+                        className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg hover:bg-emerald-100"
+                      >
+                        ✅ 已選 Bonus：{empData.spellReward}
+                      </button>
+                    ) : isFull ? (
+                      <button
+                        onClick={() => {
+                          setSpellChoice('【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)');
+                          setShowSpellModal(true);
+                        }}
+                        className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-[10px] animate-bounce shadow"
+                      >
+                        🎉 選擇 Bonus 獎勵 (2選1)
+                      </button>
+                    ) : null}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1355,11 +1442,12 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                 </div>
               ) : (
                 (() => {
+                  const calculatedCheckins = attachCalculatedPointsToCheckins(myCheckins, startDateStr);
                   const startMs = new Date(startDateStr).getTime();
                   // 整理打卡紀錄並按週次分類
-                  const groupedWeeks: Record<number, { weekPts: number; list: Checkin[] }> = {};
+                  const groupedWeeks: Record<number, { weekPts: number; list: CalculatedCheckin[] }> = {};
 
-                  myCheckins.forEach((c) => {
+                  calculatedCheckins.forEach((c) => {
                     const cDate = c.createdAt?.seconds
                       ? new Date(c.createdAt.seconds * 1000)
                       : new Date(c.createdAt || Date.now());
@@ -1371,7 +1459,7 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                     }
                     groupedWeeks[weekNum].list.push(c);
                     if (c.status === '通過' || c.status === '補登通過') {
-                      groupedWeeks[weekNum].weekPts += c.pts || 0;
+                      groupedWeeks[weekNum].weekPts += c.earnedPts;
                     }
                   });
 
@@ -1383,19 +1471,47 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                   return weekKeys.map((wk) => {
                     const group = groupedWeeks[wk];
 
-                    // 統計本週各關卡打卡次數與得分
-                    const taskSummary: Record<string, { count: number; passedCount: number; pts: number }> = {};
+                    // 將本週紀錄按關卡 (taskType) 分組並統計
+                    const taskGroupMap: Record<
+                      string,
+                      { count: number; passedCount: number; pts: number; list: Checkin[] }
+                    > = {};
+
                     group.list.forEach((c) => {
                       const tName = c.taskType || '一般打卡';
-                      if (!taskSummary[tName]) {
-                        taskSummary[tName] = { count: 0, passedCount: 0, pts: 0 };
+                      if (!taskGroupMap[tName]) {
+                        taskGroupMap[tName] = { count: 0, passedCount: 0, pts: 0, list: [] };
                       }
-                      taskSummary[tName].count += 1;
+                      taskGroupMap[tName].count += 1;
+                      taskGroupMap[tName].list.push(c);
                       if (c.status === '通過' || c.status === '補登通過') {
-                        taskSummary[tName].passedCount += 1;
-                        taskSummary[tName].pts += c.pts || 0;
+                        taskGroupMap[tName].passedCount += 1;
+                        taskGroupMap[tName].pts += c.earnedPts || 0;
                       }
                     });
+
+                    // 日期轉換與解析函式
+                    const parseCheckinDate = (c: Checkin) => {
+                      let dateObj: Date;
+                      if (c.isMakeup && c.makeupDate) {
+                        const parts = c.makeupDate.split('-');
+                        if (parts.length === 3) {
+                          dateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                        } else {
+                          dateObj = new Date(c.makeupDate);
+                        }
+                      } else if (c.createdAt?.seconds) {
+                        dateObj = new Date(c.createdAt.seconds * 1000);
+                      } else if (c.createdAt) {
+                        dateObj = new Date(c.createdAt);
+                      } else {
+                        dateObj = new Date();
+                      }
+                      const m = dateObj.getMonth() + 1;
+                      const d = dateObj.getDate();
+                      const dateStr = `${m}/${d}`;
+                      return { dateObj, dateStr };
+                    };
 
                     return (
                       <div key={wk} className="bg-purple-50/70 border border-purple-100 rounded-2xl overflow-hidden shadow-2xs">
@@ -1412,89 +1528,121 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
                           </div>
                         </div>
 
-                        {/* 本週關卡得分小計獨立卡片 */}
-                        <div className="p-2.5 bg-white/90 border-b border-purple-100/80 space-y-1.5">
-                          <div className="text-[10px] font-bold text-purple-900 flex justify-between items-center">
+                        {/* 本週各關卡分類得分卡片 */}
+                        <div className="p-3 bg-white/90 space-y-2">
+                          <div className="text-[11px] font-bold text-purple-900 flex justify-between items-center pb-1 border-b border-purple-100">
                             <span className="flex items-center gap-1">
                               <span>🎯</span> 各關卡紀錄得分狀況
                             </span>
-                            <span className="text-[9px] text-gray-400 font-normal">成功審核統計</span>
+                            <span className="text-[9px] text-purple-500 bg-purple-50 px-2 py-0.5 rounded-full font-normal">
+                              點擊關卡可展開 / 收合明細
+                            </span>
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {Object.entries(taskSummary).map(([tName, stat]) => (
-                              <div
-                                key={tName}
-                                className="bg-purple-50/90 hover:bg-purple-100/80 border border-purple-200/70 rounded-xl px-2.5 py-1 text-[11px] flex items-center gap-1.5 shadow-2xs"
-                              >
-                                <span className="font-bold text-purple-950">{tName}</span>
-                                <span className="text-purple-700 bg-purple-200/60 px-1.5 rounded-md text-[10px] font-bold">
-                                  {stat.passedCount} 次
-                                </span>
-                                <span className="font-extrabold text-amber-600 text-[11px]">
-                                  {stat.pts} 分
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
 
-                        {/* 本週個別打卡紀錄列表 */}
-                        <div className="p-2 space-y-1 bg-purple-50/30">
-                          <div className="text-[9px] font-bold text-purple-400 px-1 pt-0.5">打卡流水帳紀錄：</div>
-                          <div className="divide-y divide-purple-100/60">
-                            {group.list.map((c) => {
-                              const cDateStr = c.createdAt?.seconds
-                                ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW', {
-                                    month: 'numeric',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })
-                                : '';
-                              const isPassed = c.status === '通過' || c.status === '補登通過';
-                              const isPending = c.status === '待審核';
+                          <div className="space-y-2">
+                            {Object.entries(taskGroupMap).map(([tName, stat]) => {
+                              const taskKey = `${wk}_${tName}`;
+                              const isExpanded = !!expandedTasks[taskKey];
+
+                              // 排序該關卡的打卡紀錄 (依打卡日期由早到晚，如 8/3, 8/4, 8/5...)
+                              const sortedTaskCheckins = [...stat.list].sort((a, b) => {
+                                const dA = parseCheckinDate(a).dateObj.getTime();
+                                const dB = parseCheckinDate(b).dateObj.getTime();
+                                return dA - dB;
+                              });
 
                               return (
                                 <div
-                                  key={c.id || Math.random()}
-                                  className="p-2 bg-white rounded-xl flex justify-between items-center gap-2 text-xs shadow-2xs my-1"
+                                  key={tName}
+                                  className="border border-purple-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs transition-all"
                                 >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-bold text-purple-950 text-xs truncate">
-                                        {c.taskType}
+                                  {/* 可點擊展開的關卡 Header */}
+                                  <button
+                                    onClick={() =>
+                                      setExpandedTasks((prev) => ({
+                                        ...prev,
+                                        [taskKey]: !prev[taskKey],
+                                      }))
+                                    }
+                                    className="w-full text-left p-2.5 flex items-center justify-between bg-gradient-to-r from-purple-50/90 to-indigo-50/40 hover:bg-purple-100/60 transition-colors cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-extrabold text-purple-950 text-xs">{tName}</span>
+                                      <span className="text-purple-700 bg-purple-200/60 px-1.5 py-0.5 rounded-md text-[10px] font-bold">
+                                        {stat.passedCount} 次成功
                                       </span>
-                                      {c.isMakeup && (
-                                        <span className="text-[8px] bg-amber-100 text-amber-800 px-1 rounded font-bold">
-                                          補登
-                                        </span>
-                                      )}
+                                      <span className="font-extrabold text-amber-600 text-xs">
+                                        {stat.pts} 分
+                                      </span>
                                     </div>
-                                    <div className="text-[9px] text-gray-400 mt-0.5">
-                                      {cDateStr}
+                                    <div className="flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-white/80 border border-purple-200/70 px-2 py-0.5 rounded-full shadow-2xs">
+                                      <span>{isExpanded ? '收合' : '點擊展開'}</span>
+                                      <span>{isExpanded ? '▲' : '▼'}</span>
                                     </div>
-                                  </div>
+                                  </button>
 
-                                  <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
-                                    <div className="flex items-center gap-1.5">
-                                      {isPassed && (
-                                        <span className="font-extrabold text-emerald-600 text-xs">
-                                          +{c.pts || 0} 分
-                                        </span>
-                                      )}
-                                      <span
-                                        className={`font-bold px-2 py-0.5 rounded-full text-[9px] ${
-                                          isPassed
-                                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300/50'
-                                            : isPending
-                                            ? 'bg-amber-100 text-amber-700 border border-amber-300/50'
-                                            : 'bg-red-100 text-red-700 border border-red-300/50'
-                                        }`}
-                                      >
-                                        {c.status}
-                                      </span>
+                                  {/* 點擊展開後的詳細列表 (依日期排序) */}
+                                  {isExpanded && (
+                                    <div className="p-2 bg-purple-50/40 border-t border-purple-100 space-y-1.5">
+                                      <div className="text-[10px] font-bold text-purple-500 px-1 flex justify-between items-center">
+                                        <span>📅 【{tName}】依日期紀錄明細：</span>
+                                        <span>共 {stat.list.length} 筆</span>
+                                      </div>
+                                      <div className="space-y-1">
+                                        {sortedTaskCheckins.map((c) => {
+                                          const { dateStr } = parseCheckinDate(c);
+                                          const isPassed = c.status === '通過' || c.status === '補登通過';
+                                          const isPending = c.status === '待審核';
+
+                                          return (
+                                            <div
+                                              key={c.id || Math.random()}
+                                              className="p-2 bg-white rounded-xl flex items-center justify-between text-xs border border-purple-100/80 shadow-2xs"
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <span className="font-extrabold text-purple-900 bg-purple-100/80 px-2 py-0.5 rounded-md text-[11px] flex-shrink-0">
+                                                  {dateStr}
+                                                </span>
+                                                {c.isMakeup && (
+                                                  <span className="text-[8px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold flex-shrink-0">
+                                                    補登 ({c.makeupDate || dateStr})
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              <div className="flex items-center gap-2 flex-shrink-0">
+                                                {isPassed ? (
+                                                  <span
+                                                    className={`font-extrabold text-xs px-2 py-0.5 rounded-md ${
+                                                      c.isCrit
+                                                        ? 'text-amber-800 bg-amber-100 border border-amber-300 shadow-2xs font-bold animate-pulse'
+                                                        : c.earnedPts === 0
+                                                        ? 'text-gray-400 bg-gray-100'
+                                                        : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                                    }`}
+                                                  >
+                                                    +{c.earnedPts} 分 {c.isCrit && '💥 爆擊!'}
+                                                  </span>
+                                                ) : null}
+
+                                                <span
+                                                  className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                                                    isPassed
+                                                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                                      : isPending
+                                                      ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                                      : 'bg-red-100 text-red-700 border border-red-200'
+                                                  }`}
+                                                >
+                                                  {c.status}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -1516,18 +1664,18 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
           <div className="bg-white w-full max-w-sm rounded-3xl p-5 text-center space-y-3">
             <div className="text-4xl">🎁</div>
             <h3 className="font-bold text-purple-950 text-base">恭喜達成完賽條件！</h3>
-            <p className="text-xs text-purple-600">請選擇完賽禮（3選1），選定後無法更換</p>
+            <p className="text-xs text-purple-600">請選擇完賽禮（3選1）</p>
 
             <div className="space-y-2 text-left">
               {[
-                { id: 'm2超能水光凍', label: '💧 m2 超能水光凍 (10入)' },
-                { id: 'm2超能膠原凍', label: '✨ m2 超能膠原凍 (10入)' },
-                { id: '新普利夜酵凍', label: '🌙 新普利夜酵凍 (10入)' },
+                { id: 'm2-超能水光凍*10入', label: '💧 m2-超能水光凍*10入' },
+                { id: 'm2-超能膠原凍*10入', label: '✨ m2-超能膠原凍*10入' },
+                { id: '新普利夜酵凍*10入', label: '🌙 新普利夜酵凍*10入' },
               ].map((item) => (
                 <div
                   key={item.id}
                   onClick={() => setCompletionChoice(item.id)}
-                  className={`p-3 rounded-xl border-2 font-bold text-xs cursor-pointer ${
+                  className={`p-3 rounded-xl border-2 font-bold text-xs cursor-pointer transition-all ${
                     completionChoice === item.id ? 'border-purple-600 bg-purple-50 text-purple-950' : 'border-purple-100 text-gray-600'
                   }`}
                 >
@@ -1543,6 +1691,53 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
               <button
                 disabled={!completionChoice}
                 onClick={handleCompletionSubmit}
+                className="flex-1 py-2.5 bg-purple-600 text-white font-bold text-xs rounded-xl shadow-md disabled:opacity-50"
+              >
+                確認選擇
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拼字 Bonus 獎勵彈窗 Modal */}
+      {showSpellModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-5 text-center space-y-3">
+            <div className="text-4xl">🎉</div>
+            <h3 className="font-bold text-purple-950 text-base">恭喜解鎖拼字大獎！</h3>
+            <p className="text-xs text-purple-600">請選擇拼字 BONUS 禮（2選1）</p>
+
+            <div className="space-y-2 text-left">
+              {[
+                {
+                  id: '【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)',
+                  label: '🌸 【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)',
+                },
+                {
+                  id: '【新普利】日本專利益生菌DX 30入',
+                  label: '🌿 【新普利】日本專利益生菌DX 30入',
+                },
+              ].map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setSpellChoice(item.id)}
+                  className={`p-3 rounded-xl border-2 font-bold text-xs cursor-pointer leading-relaxed transition-all ${
+                    spellChoice === item.id ? 'border-purple-600 bg-purple-50 text-purple-950' : 'border-purple-100 text-gray-600'
+                  }`}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowSpellModal(false)} className="w-20 py-2.5 bg-gray-100 text-gray-600 font-bold text-xs rounded-xl">
+                取消
+              </button>
+              <button
+                disabled={!spellChoice}
+                onClick={handleSpellSubmit}
                 className="flex-1 py-2.5 bg-purple-600 text-white font-bold text-xs rounded-xl shadow-md disabled:opacity-50"
               >
                 確認選擇

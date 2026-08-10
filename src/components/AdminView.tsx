@@ -13,7 +13,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { Employee, Checkin, Team, SystemSettings } from '../types';
-import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD } from '../lib/calcEngine';
+import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD, attachCalculatedPointsToCheckins } from '../lib/calcEngine';
 
 const ADMIN_PASSWORD = 'shiny2026admin';
 
@@ -43,7 +43,11 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
   const [rankGroupFilter, setRankGroupFilter] = useState('');
   const [jellyFilter, setJellyFilter] = useState('pending');
   const [completionFilter, setCompletionFilter] = useState('all');
+  const [completionItemFilter, setCompletionItemFilter] = useState('');
+  const [completionDeliveryFilter, setCompletionDeliveryFilter] = useState('all');
   const [spellFilter, setSpellFilter] = useState('all');
+  const [spellItemFilter, setSpellItemFilter] = useState('');
+  const [spellDeliveryFilter, setSpellDeliveryFilter] = useState('all');
 
   // Quick Review Lightbox Modal State
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -86,20 +90,69 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
   const fetchData = async () => {
     try {
       const eSnap = await getDocs(collection(db, 'summer2026_employees'));
-      setEmployees(eSnap.docs.map((d) => ({ empId: d.id, ...d.data() } as Employee)));
+      const rawEmployees = eSnap.docs.map((d) => ({ empId: d.id, ...d.data() } as Employee));
 
       const cSnap = await getDocs(collection(db, 'summer2026_checkins'));
-      setCheckins(cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Checkin)));
+      const rawCheckins = cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Checkin));
+      setCheckins(rawCheckins);
 
       const tSnap = await getDocs(collection(db, 'summer2026_teams'));
       setTeams(tSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Team)));
 
       const sSnap = await getDoc(doc(db, 'summer2026_settings', 'main'));
+      let startDateStr = '2026-07-13';
       if (sSnap.exists()) {
         const sData = sSnap.data() as SystemSettings;
         setSettings(sData);
-        if (sData.startDate) setStartDateSetting(sData.startDate);
+        if (sData.startDate) {
+          startDateStr = sData.startDate;
+          setStartDateSetting(sData.startDate);
+        }
       }
+
+      // 💥 精確即時重算全體參賽者分數並進行 Firestore 資料同步
+      const updatedEmployees = rawEmployees.map((emp) => {
+        const myApproved = rawCheckins.filter(
+          (c) => c.empId === emp.empId && (c.status === '通過' || c.status === '補登通過')
+        );
+        const calc = calculateEmployeeStats(emp, myApproved, startDateStr);
+
+        if (
+          emp.totalPts !== calc.totalPts ||
+          emp.taskPts !== calc.taskPts ||
+          emp.weeklySport !== calc.weeklySport ||
+          emp.weeklyHealth !== calc.weeklyHealth
+        ) {
+          updateDoc(doc(db, 'summer2026_employees', emp.empId), {
+            taskPts: calc.taskPts,
+            totalPts: calc.totalPts,
+            weeklyDiet: calc.weeklyDiet,
+            weeklySport: calc.weeklySport,
+            weeklyHealth: calc.weeklyHealth,
+            consecutiveDays: calc.consecutiveDays,
+            lastDietDate: calc.lastDietDate,
+            jellyCount: calc.jellyCount,
+            lastWeek: calc.lastWeek,
+            letters: calc.letters,
+          }).catch((err) => console.error('Auto sync err:', err));
+        }
+
+        return {
+          ...emp,
+          taskPts: calc.taskPts,
+          totalPts: calc.totalPts,
+          weeklyDiet: calc.weeklyDiet,
+          weeklySport: calc.weeklySport,
+          weeklyHealth: calc.weeklyHealth,
+          consecutiveDays: calc.consecutiveDays,
+          lastDietDate: calc.lastDietDate,
+          jellyCount: calc.jellyCount,
+          lastWeek: calc.lastWeek,
+          letters: calc.letters,
+        };
+      });
+
+      setEmployees(updatedEmployees);
     } catch (e) {
       console.error(e);
     }
@@ -203,31 +256,33 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
     }
   };
 
-  // 標記完賽禮發放
-  const handleDeliverCompletion = async (empId: string) => {
+  // 切換完賽禮發放狀態 (已發放 / 待發放)
+  const handleToggleDeliverCompletion = async (empId: string, currentDelivered?: boolean) => {
+    const nextDelivered = !currentDelivered;
     try {
       await updateDoc(doc(db, 'summer2026_employees', empId), {
-        completionDelivered: true,
-        completionDeliveredAt: new Date(),
+        completionDelivered: nextDelivered,
+        completionDeliveredAt: nextDelivered ? new Date() : null,
       });
-      alert('✅ 已標記完賽禮已發放！');
+      alert(`✅ 已將完賽禮發放狀態更新為：${nextDelivered ? '已發放' : '待發放'}`);
       fetchData();
     } catch (e: any) {
-      alert('標記失敗：' + e.message);
+      alert('更新失敗：' + e.message);
     }
   };
 
-  // 標記拼字獎勵發放
-  const handleDeliverSpell = async (empId: string) => {
+  // 切換拼字獎勵發放狀態 (已發放 / 待發放)
+  const handleToggleDeliverSpell = async (empId: string, currentDelivered?: boolean) => {
+    const nextDelivered = !currentDelivered;
     try {
       await updateDoc(doc(db, 'summer2026_employees', empId), {
-        spellDelivered: true,
-        spellDeliveredAt: new Date(),
+        spellDelivered: nextDelivered,
+        spellDeliveredAt: nextDelivered ? new Date() : null,
       });
-      alert('✅ 已標記拼字獎勵已發放！');
+      alert(`✅ 已將拼字 Bonus 禮發放狀態更新為：${nextDelivered ? '已發放' : '待發放'}`);
       fetchData();
     } catch (e: any) {
-      alert('標記失敗：' + e.message);
+      alert('更新失敗：' + e.message);
     }
   };
 
@@ -315,15 +370,16 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
 
   // 2. 匯出打卡紀錄 CSV
   const exportCheckinsCSV = () => {
+    const calculated = attachCalculatedPointsToCheckins(filteredCheckins, settings.startDate || '2026-07-13');
     const rows = [
       ['打卡紀錄ID', '員工編號', '姓名', '任務類型', '審核狀態', '獲得分數', '打卡時間', '審核/補登人員', '是否補登', '補登原因'],
-      ...filteredCheckins.map((c) => [
+      ...calculated.map((c) => [
         c.id || '',
         c.empId,
         c.empName,
         c.taskType,
         c.status,
-        String(c.pts || 0),
+        String(c.earnedPts || 0),
         c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW') : '',
         c.reviewedBy || c.makeupBy || '',
         c.isMakeup ? '是' : '否',
@@ -450,6 +506,31 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
     }
   };
 
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
+  // 全體一鍵重算與同步總分
+  const handleSyncAllEmployeeScores = async () => {
+    if (!confirm('確定要根據最新的打卡規則，一鍵重新計算全體同仁的分數與總積分嗎？')) return;
+    setIsSyncingAll(true);
+    try {
+      const eSnap = await getDocs(collection(db, 'summer2026_employees'));
+      const cSnap = await getDocs(collection(db, 'summer2026_checkins'));
+      const allCheckins = cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Checkin));
+
+      let updatedCount = 0;
+      for (const empDoc of eSnap.docs) {
+        await recalcAndUpdateEmp(empDoc.id, allCheckins);
+        updatedCount++;
+      }
+      alert(`✅ 已完成！成功重新計算並連動更新全體 ${updatedCount} 位同仁的最新總積分！`);
+      fetchData();
+    } catch (err: any) {
+      alert('同步失敗：' + (err.message || '未知錯誤'));
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
+
   // 登入介面
   if (!isAuthenticated) {
     return (
@@ -544,7 +625,16 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
         {/* 1. 總覽 Dashboard */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            <h2 className="text-lg font-bold text-[#ffd700]">📊 活動總覽</h2>
+            <div className="flex justify-between items-center flex-wrap gap-2">
+              <h2 className="text-lg font-bold text-[#ffd700]">📊 活動總覽</h2>
+              <button
+                onClick={handleSyncAllEmployeeScores}
+                disabled={isSyncingAll}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold rounded-xl text-xs shadow-md transition-all flex items-center gap-2 border border-purple-400/40"
+              >
+                {isSyncingAll ? '🔄 重新計算同步中...' : '⚡ 一鍵重算並同步全體同仁總分'}
+              </button>
+            </div>
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-[#1a1a2e] border border-[#2a2a4a] p-4 rounded-xl text-center">
                 <div className="text-2xl font-bold text-[#ffd700]">
@@ -706,6 +796,7 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
                     <th className="p-3">時間</th>
                     <th className="p-3">員工</th>
                     <th className="p-3">關卡類型</th>
+                    <th className="p-3">得分/爆擊</th>
                     <th className="p-3">狀態</th>
                     <th className="p-3 text-right">即時審核操作</th>
                   </tr>
@@ -713,67 +804,86 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
                 <tbody className="divide-y divide-[#2a2a4a]">
                   {filteredCheckins.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-[#8888aa]">
+                      <td colSpan={7} className="p-8 text-center text-[#8888aa]">
                         <div className="text-2xl mb-1">🔍</div>
                         尚無符合條件的打卡紀錄
                       </td>
                     </tr>
                   ) : (
-                    filteredCheckins.map((c, index) => (
-                      <tr key={c.id || index} className="hover:bg-[#252545]/60 transition-colors">
-                        {/* 截圖微縮圖 */}
-                        <td className="p-2 text-center">
-                          {c.fileUrl ? (
-                            <div
-                              onClick={() => setLightboxIndex(index)}
-                              className="relative group w-12 h-12 mx-auto rounded-lg overflow-hidden border border-purple-500/40 cursor-pointer shadow-sm hover:border-amber-400 transition-all"
-                            >
-                              <img
-                                src={c.fileUrl}
-                                alt="打卡截圖"
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                              />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[9px] text-white font-bold transition-opacity">
-                                大圖
+                    (() => {
+                      const calculatedList = attachCalculatedPointsToCheckins(filteredCheckins, settings.startDate || '2026-07-13');
+                      return calculatedList.map((c, index) => (
+                        <tr key={c.id || index} className="hover:bg-[#252545]/60 transition-colors">
+                          {/* 截圖微縮圖 */}
+                          <td className="p-2 text-center">
+                            {c.fileUrl ? (
+                              <div
+                                onClick={() => setLightboxIndex(index)}
+                                className="relative group w-12 h-12 mx-auto rounded-lg overflow-hidden border border-purple-500/40 cursor-pointer shadow-sm hover:border-amber-400 transition-all"
+                              >
+                                <img
+                                  src={c.fileUrl}
+                                  alt="打卡截圖"
+                                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[9px] text-white font-bold transition-opacity">
+                                  大圖
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-gray-500">無截圖</span>
-                          )}
-                        </td>
+                            ) : (
+                              <span className="text-[10px] text-gray-500">無截圖</span>
+                            )}
+                          </td>
 
-                        <td className="p-3 text-[#8888aa] whitespace-nowrap">
-                          {c.createdAt?.seconds
-                            ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW', {
-                                month: 'numeric',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : ''}
-                        </td>
-                        <td className="p-3 font-bold">
-                          <div className="text-white text-xs">{c.empName}</div>
-                          <div className="text-[10px] text-[#8888aa]">{c.empId}</div>
-                        </td>
-                        <td className="p-3">
-                          <span className="bg-purple-950/80 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold">
-                            {c.taskType}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              c.status === '通過' || c.status === '補登通過'
-                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                                : c.status === '待審核'
-                                ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                : 'bg-red-950 text-red-400 border border-red-800'
-                            }`}
-                          >
-                            {c.status}
-                          </span>
-                        </td>
+                          <td className="p-3 text-[#8888aa] whitespace-nowrap">
+                            {c.createdAt?.seconds
+                              ? new Date(c.createdAt.seconds * 1000).toLocaleString('zh-TW', {
+                                  month: 'numeric',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : ''}
+                          </td>
+                          <td className="p-3 font-bold">
+                            <div className="text-white text-xs">{c.empName}</div>
+                            <div className="text-[10px] text-[#8888aa]">{c.empId}</div>
+                          </td>
+                          <td className="p-3">
+                            <span className="bg-purple-950/80 text-purple-300 border border-purple-800 px-2 py-0.5 rounded text-[11px] font-bold">
+                              {c.taskType}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold">
+                            {c.status === '通過' || c.status === '補登通過' ? (
+                              <span
+                                className={`px-2 py-0.5 rounded text-[11px] ${
+                                  c.isCrit
+                                    ? 'bg-amber-950/90 text-amber-300 border border-amber-600 animate-pulse font-extrabold'
+                                    : c.earnedPts === 0
+                                    ? 'bg-gray-900 text-gray-400'
+                                    : 'bg-emerald-950/80 text-emerald-400 border border-emerald-800'
+                                }`}
+                              >
+                                +{c.earnedPts} 分 {c.isCrit && '💥 爆擊!'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-500 text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                c.status === '通過' || c.status === '補登通過'
+                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                                  : c.status === '待審核'
+                                  ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                  : 'bg-red-950 text-red-400 border border-red-800'
+                              }`}
+                            >
+                              {c.status}
+                            </span>
+                          </td>
 
                         {/* 操作按鈕 */}
                         <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
@@ -803,8 +913,9 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
                           )}
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ));
+                  })()
+                )}
                 </tbody>
               </table>
             </div>
@@ -1140,196 +1251,584 @@ export default function AdminView({ onSwitchToPlayer }: { onSwitchToPlayer: () =
         )}
 
         {/* 7. 完賽禮名單 Completion */}
-        {activeTab === 'completion' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-bold text-[#ffd700]">🎁 完賽禮選擇名單 (門檻 ≥ 45 分 + 照片心得)</h2>
-              <button
-                onClick={() => {
-                  const rows = [['員工編號', '姓名', '組別', '積分', '選擇獎品', '是否發放']];
-                  employees
-                    .filter((e) => (e.totalPts || 0) >= 45 || e.completionReward)
-                    .forEach((e) => {
+        {activeTab === 'completion' && (() => {
+          const compEligibleList = employees.filter((e) => (e.totalPts || 0) >= 45 || e.completionReward);
+
+          const itemCounts: Record<string, { total: number; pending: number; delivered: number }> = {
+            'm2-超能水光凍*10入': { total: 0, pending: 0, delivered: 0 },
+            'm2-超能膠原凍*10入': { total: 0, pending: 0, delivered: 0 },
+            '新普利夜酵凍*10入': { total: 0, pending: 0, delivered: 0 },
+          };
+          let unselectedCount = 0;
+
+          compEligibleList.forEach((e) => {
+            if (!e.completionReward) {
+              unselectedCount++;
+            } else if (itemCounts[e.completionReward]) {
+              itemCounts[e.completionReward].total++;
+              if (e.completionDelivered) {
+                itemCounts[e.completionReward].delivered++;
+              } else {
+                itemCounts[e.completionReward].pending++;
+              }
+            } else {
+              itemCounts[e.completionReward] = itemCounts[e.completionReward] || { total: 0, pending: 0, delivered: 0 };
+              itemCounts[e.completionReward].total++;
+              if (e.completionDelivered) itemCounts[e.completionReward].delivered++;
+              else itemCounts[e.completionReward].pending++;
+            }
+          });
+
+          const filteredList = compEligibleList.filter((e) => {
+            // Item filter
+            if (completionItemFilter === 'unselected') {
+              if (e.completionReward) return false;
+            } else if (completionItemFilter) {
+              if (e.completionReward !== completionItemFilter) return false;
+            }
+
+            // Delivery filter
+            if (completionDeliveryFilter === 'pending') {
+              if (!e.completionReward || e.completionDelivered) return false;
+            } else if (completionDeliveryFilter === 'delivered') {
+              if (!e.completionDelivered) return false;
+            } else if (completionDeliveryFilter === 'unselected') {
+              if (e.completionReward) return false;
+            }
+
+            // Keyword search
+            if (searchEmp) {
+              const kw = searchEmp.toLowerCase();
+              if (!e.name.toLowerCase().includes(kw) && !e.empId.toLowerCase().includes(kw)) return false;
+            }
+
+            return true;
+          });
+
+          return (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-[#ffd700]">🎁 完賽禮選擇名單 (門檻 ≥ 45 分 + 照片心得)</h2>
+                  <p className="text-xs text-[#8888aa] mt-0.5">顯示各完賽禮品項總統計數量與同仁領取發放狀態</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const rows = [['員工編號', '姓名', '組別', '積分', '選擇完賽禮品項', '發放狀態']];
+                    filteredList.forEach((e) => {
                       rows.push([
                         e.empId,
                         e.name,
                         e.group,
                         String(e.totalPts || 0),
                         e.completionReward || '未選擇',
-                        e.completionDelivered ? '已發放' : '未發放',
+                        e.completionDelivered ? '已發放' : e.completionReward ? '待發放' : '未選擇',
                       ]);
                     });
-                  downloadCSV(rows, '完賽禮領取名單');
-                }}
-                className="px-3 py-1.5 bg-amber-600 text-white rounded text-xs font-bold"
-              >
-                📥 匯出 CSV 報表
-              </button>
-            </div>
-
-            <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#2a2a4a] text-[#8888aa]">
-                    <th className="p-3">員工</th>
-                    <th className="p-3">總積分</th>
-                    <th className="p-3">選擇之完賽禮</th>
-                    <th className="p-3">發放狀態</th>
-                    <th className="p-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#2a2a4a]">
-                  {employees
-                    .filter((e) => (e.totalPts || 0) >= 45 || e.completionReward)
-                    .map((e) => (
-                      <tr key={e.empId}>
-                        <td className="p-3 font-bold">
-                          {e.name} <span className="text-[10px] text-[#8888aa]">({e.empId})</span>
-                        </td>
-                        <td className="p-3 font-bold text-[#ffd700]">{e.totalPts || 0} 分</td>
-                        <td className="p-3">{e.completionReward || <span className="text-gray-500">未選</span>}</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] ${
-                              e.completionDelivered ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400'
-                            }`}
-                          >
-                            {e.completionDelivered ? '已發放' : '待發放'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {e.completionReward && !e.completionDelivered && (
-                            <button
-                              onClick={() => handleDeliverCompletion(e.empId)}
-                              className="px-2 py-1 bg-emerald-700 text-white rounded text-[10px]"
-                            >
-                              ✅ 標記已發放
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* 8. 拼字獎勵 Spell */}
-        {activeTab === 'spell' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center flex-wrap gap-2">
-              <div>
-                <h2 className="text-lg font-bold text-[#ffd700]">🎉 拼字挑戰 Bonus 獎勵名單</h2>
-                <p className="text-xs text-[#8888aa] mt-0.5">即時追蹤同仁收集字母進度、累積單字狀態與獎勵發放</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={spellFilter}
-                  onChange={(e) => setSpellFilter(e.target.value)}
-                  className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white"
+                    downloadCSV(rows, '完賽禮領取與品項統計名單');
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition-all shadow"
                 >
-                  <option value="all">顯示全部同仁</option>
-                  <option value="completed">集滿 11 個字母者</option>
-                  <option value="pending_delivery">待發放獎勵者</option>
-                  <option value="delivered">已完成發放者</option>
-                </select>
+                  📥 匯出當前篩選 CSV 報表
+                </button>
               </div>
-            </div>
 
-            <div className="bg-[#1a1a3e] border border-[#2a2a6a] p-3.5 rounded-xl text-xs text-purple-200 space-y-1">
-              <div className="font-bold">🔤 拼字字母獲得機制說明：</div>
-              <div className="text-[11px] text-[#c0c0ff]">
-                同仁每累積獲得 <span className="font-bold text-[#ffd700]">8 總積分</span>，系統將自動隨機抽取並解鎖一個未收集到的「SHINYBRANDS」字母（全套共 11 個字母：S-H-I-N-Y-B-R-A-N-D-S）。集滿 11 個字母即可解鎖選領拼字大獎！
+              {/* 個別品項統計數量卡片 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  { key: 'm2-超能水光凍*10入', icon: '💧', label: 'm2-超能水光凍*10入', color: 'border-cyan-800 bg-cyan-950/40 text-cyan-200' },
+                  { key: 'm2-超能膠原凍*10入', icon: '✨', label: 'm2-超能膠原凍*10入', color: 'border-pink-800 bg-pink-950/40 text-pink-200' },
+                  { key: '新普利夜酵凍*10入', icon: '🌙', label: '新普利夜酵凍*10入', color: 'border-indigo-800 bg-indigo-950/40 text-indigo-200' },
+                ].map((item) => {
+                  const stat = itemCounts[item.key] || { total: 0, pending: 0, delivered: 0 };
+                  const isSelectedFilter = completionItemFilter === item.key;
+                  return (
+                    <div
+                      key={item.key}
+                      onClick={() => setCompletionItemFilter(isSelectedFilter ? '' : item.key)}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer ${item.color} ${
+                        isSelectedFilter ? 'ring-2 ring-amber-400 scale-[1.02]' : 'hover:border-amber-500/50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-xs font-bold mb-1">
+                        <span>{item.icon} {item.label}</span>
+                        {isSelectedFilter && <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-extrabold">篩選中</span>}
+                      </div>
+                      <div className="text-2xl font-black text-white my-1">
+                        {stat.total} <span className="text-xs text-gray-400 font-normal">份</span>
+                      </div>
+                      <div className="flex gap-2 text-[11px] font-bold mt-1">
+                        <span className="text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/50">
+                          待發放: {stat.pending}
+                        </span>
+                        <span className="text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">
+                          已發放: {stat.delivered}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div
+                  onClick={() => setCompletionItemFilter(completionItemFilter === 'unselected' ? '' : 'unselected')}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer border-gray-700 bg-gray-900/60 text-gray-300 ${
+                    completionItemFilter === 'unselected' ? 'ring-2 ring-amber-400 scale-[1.02]' : 'hover:border-gray-500'
+                  }`}
+                >
+                  <div className="flex justify-between items-center text-xs font-bold mb-1">
+                    <span>⏳ 未選擇品項同仁</span>
+                    {completionItemFilter === 'unselected' && <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-extrabold">篩選中</span>}
+                  </div>
+                  <div className="text-2xl font-black text-gray-200 my-1">
+                    {unselectedCount} <span className="text-xs text-gray-400 font-normal">人</span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-1">
+                    達完賽門檻但尚未於前台選擇禮物
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#2a2a4a] text-[#8888aa]">
-                    <th className="p-3">員工</th>
-                    <th className="p-3">收集字母進度</th>
-                    <th className="p-3">已解鎖字母明細</th>
-                    <th className="p-3">選擇之 Bonus 獎勵</th>
-                    <th className="p-3">發放狀態</th>
-                    <th className="p-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#2a2a4a]">
-                  {employees
-                    .filter((e) => {
-                      const count = (e.letters || []).length;
-                      if (spellFilter === 'completed') return count >= 11;
-                      if (spellFilter === 'pending_delivery') return e.spellReward && !e.spellDelivered;
-                      if (spellFilter === 'delivered') return e.spellDelivered;
-                      return count > 0 || e.spellReward;
-                    })
-                    .map((e) => {
-                      const letters = e.letters || [];
-                      const isFull = letters.length >= 11;
-                      return (
-                        <tr key={e.empId}>
-                          <td className="p-3 font-bold">
+              {/* 篩選條件區域 */}
+              <div className="bg-[#1a1a2e] border border-[#2a2a4a] p-3 rounded-xl flex flex-wrap gap-3 items-center justify-between">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-300">🔍 篩選條件：</span>
+
+                  {/* 品項篩選 */}
+                  <select
+                    value={completionItemFilter}
+                    onChange={(e) => setCompletionItemFilter(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="">全部品項 (三選一)</option>
+                    <option value="m2-超能水光凍*10入">💧 m2-超能水光凍*10入</option>
+                    <option value="m2-超能膠原凍*10入">✨ m2-超能膠原凍*10入</option>
+                    <option value="新普利夜酵凍*10入">🌙 新普利夜酵凍*10入</option>
+                    <option value="unselected">⏳ 尚未選擇品項</option>
+                  </select>
+
+                  {/* 發放狀態篩選 */}
+                  <select
+                    value={completionDeliveryFilter}
+                    onChange={(e) => setCompletionDeliveryFilter(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="all">全部發放狀態</option>
+                    <option value="pending">待發放 (已選未領)</option>
+                    <option value="delivered">已發放 (完成領取)</option>
+                    <option value="unselected">未選擇獎勵</option>
+                  </select>
+
+                  {/* 搜尋姓名或工號 */}
+                  <input
+                    type="text"
+                    placeholder="搜尋姓名或員工編號..."
+                    value={searchEmp}
+                    onChange={(e) => setSearchEmp(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white placeholder-gray-500 w-44"
+                  />
+
+                  {(completionItemFilter || completionDeliveryFilter !== 'all' || searchEmp) && (
+                    <button
+                      onClick={() => {
+                        setCompletionItemFilter('');
+                        setCompletionDeliveryFilter('all');
+                        setSearchEmp('');
+                      }}
+                      className="text-xs text-amber-400 underline px-1"
+                    >
+                      清除篩選
+                    </button>
+                  )}
+                </div>
+
+                <div className="text-xs text-gray-400 font-medium">
+                  符合筆數：<strong className="text-amber-400">{filteredList.length}</strong> / {compEligibleList.length} 筆
+                </div>
+              </div>
+
+              {/* 資料表格 */}
+              <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#2a2a4a] text-[#8888aa]">
+                      <th className="p-3">員工姓名 (工號)</th>
+                      <th className="p-3">組別</th>
+                      <th className="p-3">總積分</th>
+                      <th className="p-3">選擇之完賽禮品項</th>
+                      <th className="p-3">發放狀態</th>
+                      <th className="p-3">操作 (可切換狀態)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2a2a4a]">
+                    {filteredList.length > 0 ? (
+                      filteredList.map((e) => (
+                        <tr key={e.empId} className="hover:bg-[#20203a] transition-colors">
+                          <td className="p-3 font-bold text-white">
                             {e.name} <span className="text-[10px] text-[#8888aa]">({e.empId})</span>
                           </td>
-                          <td className="p-3 font-bold">
-                            <span className={isFull ? 'text-amber-400' : 'text-purple-300'}>
-                              {letters.length} / 11 {isFull && '🎉 (已集滿)'}
-                            </span>
-                          </td>
+                          <td className="p-3 text-gray-300">{e.group === 'fat' ? '⚡ 減脂組' : e.group === 'muscle' ? '💪 增肌組' : '未定'}</td>
+                          <td className="p-3 font-bold text-[#ffd700]">{e.totalPts || 0} 分</td>
                           <td className="p-3">
-                            <div className="flex flex-wrap gap-1">
-                              {letters.length > 0 ? (
-                                letters.map((l, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="px-1.5 py-0.5 bg-[#2a2a5a] text-[#ffd700] rounded font-mono text-[10px] border border-[#4a4a8a]"
-                                  >
-                                    {l}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-gray-500">尚未收集</span>
-                              )}
-                            </div>
+                            {e.completionReward ? (
+                              <span className="font-bold text-amber-300 bg-amber-950/40 px-2 py-1 rounded border border-amber-800/60 inline-block">
+                                {e.completionReward}
+                              </span>
+                            ) : (
+                              <span className="text-gray-500 italic">未選擇</span>
+                            )}
                           </td>
-                          <td className="p-3">{e.spellReward || <span className="text-gray-500">未選擇</span>}</td>
                           <td className="p-3">
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] ${
-                                e.spellDelivered
-                                  ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                                  : e.spellReward
-                                  ? 'bg-amber-950 text-amber-400 border border-amber-800'
-                                  : 'bg-gray-800 text-gray-400'
+                              className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                                e.completionDelivered
+                                  ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                                  : e.completionReward
+                                  ? 'bg-amber-950 text-amber-400 border-amber-800'
+                                  : 'bg-gray-800 text-gray-400 border-gray-700'
                               }`}
                             >
-                              {e.spellDelivered ? '已發放' : e.spellReward ? '待發放' : '未選擇獎勵'}
+                              {e.completionDelivered ? '已發放' : e.completionReward ? '待發放' : '未選擇獎勵'}
                             </span>
                           </td>
                           <td className="p-3">
-                            {e.spellReward && !e.spellDelivered ? (
+                            {e.completionReward ? (
                               <button
-                                onClick={() => handleDeliverSpell(e.empId)}
-                                className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px] font-bold"
+                                onClick={() => handleToggleDeliverCompletion(e.empId, e.completionDelivered)}
+                                className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all shadow ${
+                                  e.completionDelivered
+                                    ? 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600'
+                                    : 'bg-emerald-700 hover:bg-emerald-600 text-white'
+                                }`}
                               >
-                                ✅ 標記已發放
+                                {e.completionDelivered ? '↩️ 切換為待發放' : '✅ 標記已發放'}
                               </button>
-                            ) : e.spellDelivered ? (
-                              <span className="text-[10px] text-gray-500">完成</span>
                             ) : (
-                              <span className="text-[10px] text-gray-500">—</span>
+                              <span className="text-gray-500 text-[10px]">待同仁選擇</span>
                             )}
                           </td>
                         </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-gray-500">
+                          查無符合條件之同仁紀錄
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
+
+        {/* 8. 拼字獎勵 Spell */}
+        {activeTab === 'spell' && (() => {
+          const spellEligibleList = employees.filter((e) => (e.letters || []).length >= 11 || e.spellReward);
+
+          const spellItemCounts: Record<string, { total: number; pending: number; delivered: number }> = {
+            '【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)': { total: 0, pending: 0, delivered: 0 },
+            '【新普利】日本專利益生菌DX 30入': { total: 0, pending: 0, delivered: 0 },
+          };
+          let spellUnselectedCount = 0;
+
+          spellEligibleList.forEach((e) => {
+            if (!e.spellReward) {
+              spellUnselectedCount++;
+            } else if (spellItemCounts[e.spellReward]) {
+              spellItemCounts[e.spellReward].total++;
+              if (e.spellDelivered) {
+                spellItemCounts[e.spellReward].delivered++;
+              } else {
+                spellItemCounts[e.spellReward].pending++;
+              }
+            } else {
+              spellItemCounts[e.spellReward] = spellItemCounts[e.spellReward] || { total: 0, pending: 0, delivered: 0 };
+              spellItemCounts[e.spellReward].total++;
+              if (e.spellDelivered) spellItemCounts[e.spellReward].delivered++;
+              else spellItemCounts[e.spellReward].pending++;
+            }
+          });
+
+          const filteredSpellList = spellEligibleList.filter((e) => {
+            // Item filter
+            if (spellItemFilter === 'unselected') {
+              if (e.spellReward) return false;
+            } else if (spellItemFilter) {
+              if (e.spellReward !== spellItemFilter) return false;
+            }
+
+            // Status filter
+            if (spellDeliveryFilter === 'pending') {
+              if (!e.spellReward || e.spellDelivered) return false;
+            } else if (spellDeliveryFilter === 'delivered') {
+              if (!e.spellDelivered) return false;
+            } else if (spellDeliveryFilter === 'unselected') {
+              if (e.spellReward) return false;
+            }
+
+            // Keyword search
+            if (searchEmp) {
+              const kw = searchEmp.toLowerCase();
+              if (!e.name.toLowerCase().includes(kw) && !e.empId.toLowerCase().includes(kw)) return false;
+            }
+
+            return true;
+          });
+
+          return (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center flex-wrap gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-[#ffd700]">🎉 拼字挑戰 Bonus 獎勵名單</h2>
+                  <p className="text-xs text-[#8888aa] mt-0.5">即時追蹤同仁收集字母進度、個別選擇 Bonus 品項數量與發放狀態</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const rows = [['員工編號', '姓名', '字母進度', '選擇 Bonus 品項', '發放狀態']];
+                    filteredSpellList.forEach((e) => {
+                      rows.push([
+                        e.empId,
+                        e.name,
+                        `${(e.letters || []).length}/11`,
+                        e.spellReward || '未選擇',
+                        e.spellDelivered ? '已發放' : e.spellReward ? '待發放' : '未選擇',
+                      ]);
+                    });
+                    downloadCSV(rows, '拼字Bonus禮領取與品項統計名單');
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition-all shadow"
+                >
+                  📥 匯出當前篩選 CSV 報表
+                </button>
+              </div>
+
+              <div className="bg-[#1a1a3e] border border-[#2a2a6a] p-3 rounded-xl text-xs text-purple-200 flex justify-between items-center flex-wrap gap-2">
+                <div>
+                  <span className="font-bold text-[#ffd700]">🔤 拼字字母獲得機制：</span>
+                  <span>每累積獲得 <strong>8 分</strong> 系統隨機抽取解鎖 1 字母（SHINYBRANDS 共 11 個字母）。集滿可選領大獎！</span>
+                </div>
+              </div>
+
+              {/* 個別品項統計數量卡片 */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    key: '【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)',
+                    icon: '🌸',
+                    label: '【m2 美度】超能膠原C粉套組',
+                    color: 'border-purple-800 bg-purple-950/40 text-purple-200',
+                  },
+                  {
+                    key: '【新普利】日本專利益生菌DX 30入',
+                    icon: '🌿',
+                    label: '【新普利】日本專利益生菌DX 30入',
+                    color: 'border-emerald-800 bg-emerald-950/40 text-emerald-200',
+                  },
+                ].map((item) => {
+                  const stat = spellItemCounts[item.key] || { total: 0, pending: 0, delivered: 0 };
+                  const isSelectedFilter = spellItemFilter === item.key;
+                  return (
+                    <div
+                      key={item.key}
+                      onClick={() => setSpellItemFilter(isSelectedFilter ? '' : item.key)}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer ${item.color} ${
+                        isSelectedFilter ? 'ring-2 ring-amber-400 scale-[1.02]' : 'hover:border-amber-500/50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-xs font-bold mb-1">
+                        <span className="truncate max-w-[200px]">{item.icon} {item.label}</span>
+                        {isSelectedFilter && <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-extrabold flex-shrink-0">篩選中</span>}
+                      </div>
+                      <div className="text-2xl font-black text-white my-1">
+                        {stat.total} <span className="text-xs text-gray-400 font-normal">份</span>
+                      </div>
+                      <div className="flex gap-2 text-[11px] font-bold mt-1">
+                        <span className="text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/50">
+                          待發放: {stat.pending}
+                        </span>
+                        <span className="text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">
+                          已發放: {stat.delivered}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div
+                  onClick={() => setSpellItemFilter(spellItemFilter === 'unselected' ? '' : 'unselected')}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer border-gray-700 bg-gray-900/60 text-gray-300 ${
+                    spellItemFilter === 'unselected' ? 'ring-2 ring-amber-400 scale-[1.02]' : 'hover:border-gray-500'
+                  }`}
+                >
+                  <div className="flex justify-between items-center text-xs font-bold mb-1">
+                    <span>⏳ 未選擇 Bonus 禮同仁</span>
+                    {spellItemFilter === 'unselected' && <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-extrabold">篩選中</span>}
+                  </div>
+                  <div className="text-2xl font-black text-gray-200 my-1">
+                    {spellUnselectedCount} <span className="text-xs text-gray-400 font-normal">人</span>
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-1">
+                    集滿 11 字母但尚未選擇 Bonus 禮
+                  </div>
+                </div>
+              </div>
+
+              {/* 篩選條件區 */}
+              <div className="bg-[#1a1a2e] border border-[#2a2a4a] p-3 rounded-xl flex flex-wrap gap-3 items-center justify-between">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-gray-300">🔍 篩選條件：</span>
+
+                  {/* 品項篩選 */}
+                  <select
+                    value={spellItemFilter}
+                    onChange={(e) => setSpellItemFilter(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500 max-w-xs truncate"
+                  >
+                    <option value="">全部 Bonus 品項 (二選一)</option>
+                    <option value="【m2 美度】超能膠原C粉套組(膠原C粉30入/盒x1+粉紅杯1入x1/組)">🌸 【m2 美度】超能膠原C粉套組</option>
+                    <option value="【新普利】日本專利益生菌DX 30入">🌿 【新普利】日本專利益生菌DX 30入</option>
+                    <option value="unselected">⏳ 尚未選擇品項</option>
+                  </select>
+
+                  {/* 發放狀態篩選 */}
+                  <select
+                    value={spellDeliveryFilter}
+                    onChange={(e) => setSpellDeliveryFilter(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="all">全部發放狀態</option>
+                    <option value="pending">待發放 (已選未領)</option>
+                    <option value="delivered">已發放 (完成領取)</option>
+                    <option value="unselected">未選擇獎勵</option>
+                  </select>
+
+                  {/* 搜尋姓名或工號 */}
+                  <input
+                    type="text"
+                    placeholder="搜尋姓名或員工編號..."
+                    value={searchEmp}
+                    onChange={(e) => setSearchEmp(e.target.value)}
+                    className="bg-[#0d0d1a] border border-[#2a2a4a] rounded px-3 py-1.5 text-xs text-white placeholder-gray-500 w-44"
+                  />
+
+                  {(spellItemFilter || spellDeliveryFilter !== 'all' || searchEmp) && (
+                    <button
+                      onClick={() => {
+                        setSpellItemFilter('');
+                        setSpellDeliveryFilter('all');
+                        setSearchEmp('');
+                      }}
+                      className="text-xs text-amber-400 underline px-1"
+                    >
+                      清除篩選
+                    </button>
+                  )}
+                </div>
+
+                <div className="text-xs text-gray-400 font-medium">
+                  符合筆數：<strong className="text-amber-400">{filteredSpellList.length}</strong> / {spellEligibleList.length} 筆
+                </div>
+              </div>
+
+              {/* 資料表格 */}
+              <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#2a2a4a] text-[#8888aa]">
+                      <th className="p-3">員工</th>
+                      <th className="p-3">收集字母進度</th>
+                      <th className="p-3">已解鎖字母明細</th>
+                      <th className="p-3">選擇之 Bonus 獎勵</th>
+                      <th className="p-3">發放狀態</th>
+                      <th className="p-3">操作 (可切換狀態)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#2a2a4a]">
+                    {filteredSpellList.length > 0 ? (
+                      filteredSpellList.map((e) => {
+                        const letters = e.letters || [];
+                        const isFull = letters.length >= 11;
+                        return (
+                          <tr key={e.empId} className="hover:bg-[#20203a] transition-colors">
+                            <td className="p-3 font-bold text-white">
+                              {e.name} <span className="text-[10px] text-[#8888aa]">({e.empId})</span>
+                            </td>
+                            <td className="p-3 font-bold">
+                              <span className={isFull ? 'text-amber-400' : 'text-purple-300'}>
+                                {letters.length} / 11 {isFull && '🎉 (已集滿)'}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-wrap gap-1 max-w-xs">
+                                {letters.length > 0 ? (
+                                  letters.map((l, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="px-1.5 py-0.5 bg-[#2a2a5a] text-[#ffd700] rounded font-mono text-[10px] border border-[#4a4a8a]"
+                                    >
+                                      {l}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-gray-500">尚未收集</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              {e.spellReward ? (
+                                <span className="font-bold text-purple-200 bg-purple-950/60 px-2 py-1 rounded border border-purple-800/80 inline-block leading-relaxed">
+                                  {e.spellReward}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500 italic">未選擇</span>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-1 rounded text-[10px] font-bold border ${
+                                  e.spellDelivered
+                                    ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                                    : e.spellReward
+                                    ? 'bg-amber-950 text-amber-400 border-amber-800'
+                                    : 'bg-gray-800 text-gray-400 border-gray-700'
+                                }`}
+                              >
+                                {e.spellDelivered ? '已發放' : e.spellReward ? '待發放' : '未選擇獎勵'}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              {e.spellReward ? (
+                                <button
+                                  onClick={() => handleToggleDeliverSpell(e.empId, e.spellDelivered)}
+                                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all shadow ${
+                                    e.spellDelivered
+                                      ? 'bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600'
+                                      : 'bg-emerald-700 hover:bg-emerald-600 text-white'
+                                  }`}
+                                >
+                                  {e.spellDelivered ? '↩️ 切換為待發放' : '✅ 標記已發放'}
+                                </button>
+                              ) : (
+                                <span className="text-gray-500 text-[10px]">待同仁選擇</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-gray-500">
+                          查無符合條件之同仁紀錄
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 9. 隊伍管理 Teams */}
         {activeTab === 'teams' && (
