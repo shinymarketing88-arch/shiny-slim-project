@@ -30,6 +30,104 @@ export interface CalculatedStats {
   letters: string[];
 }
 
+export interface CalculatedCheckin extends Checkin {
+  earnedPts: number;
+  isCrit?: boolean;
+}
+
+/**
+ * 依週次與時間順序計算每筆打卡之實際得分與爆擊狀態
+ */
+export function attachCalculatedPointsToCheckins(
+  checkins: Checkin[],
+  startDateStr: string = '2026-07-13'
+): CalculatedCheckin[] {
+  const activityStart = new Date(startDateStr);
+
+  // 按時間升冪排序進行幾分計算
+  const sorted = [...checkins].sort((a, b) => {
+    const timeA = a.createdAt?.seconds ? a.createdAt.seconds * 1000 : new Date(a.createdAt || 0).getTime();
+    const timeB = b.createdAt?.seconds ? b.createdAt.seconds * 1000 : new Date(b.createdAt || 0).getTime();
+    return timeA - timeB;
+  });
+
+  // 依員工分組個別計算每週紀錄
+  const empMap: Record<string, Checkin[]> = {};
+  sorted.forEach((c) => {
+    const key = c.empId || 'unknown';
+    if (!empMap[key]) empMap[key] = [];
+    empMap[key].push(c);
+  });
+
+  const resultMap = new Map<string | Checkin, CalculatedCheckin>();
+
+  Object.values(empMap).forEach((empCheckins) => {
+    let weeklySport = 0;
+    let weeklyHealthCount = 0;
+    let lastWk = -1;
+
+    empCheckins.forEach((c) => {
+      const uploadTime = c.createdAt?.seconds
+        ? c.createdAt.seconds * 1000
+        : new Date(c.createdAt || Date.now()).getTime();
+      const uploadDate = new Date(uploadTime);
+      const daysSince = Math.floor((uploadDate.getTime() - activityStart.getTime()) / 86400000);
+      const wk = daysSince >= 0 ? Math.floor(daysSince / 7) : 0;
+
+      if (wk > lastWk) {
+        weeklySport = 0;
+        weeklyHealthCount = 0;
+        lastWk = wk;
+      }
+
+      let earnedPts = 0;
+      let isCrit = false;
+
+      const isPassed = c.status === '通過' || c.status === '補登通過';
+
+      if (isPassed) {
+        if (c.taskType === '運動打卡') {
+          earnedPts = SPORT_PTS_MAP[Math.min(weeklySport, 6)];
+          if (earnedPts === 3) isCrit = true;
+          weeklySport++;
+        } else if (c.taskType === '健康飲食') {
+          weeklyHealthCount++;
+          if (weeklyHealthCount === 4) {
+            earnedPts = 4;
+            isCrit = true;
+          } else if (weeklyHealthCount > 4 && weeklyHealthCount <= 7) {
+            earnedPts = 2;
+          } else {
+            earnedPts = 0;
+          }
+        } else if (c.taskType === '飲食打卡') {
+          earnedPts = 1;
+        } else if (c.taskType === '照片心得') {
+          earnedPts = 5;
+        } else {
+          earnedPts = c.pts || 1;
+        }
+      } else {
+        earnedPts = 0;
+      }
+
+      const calculated: CalculatedCheckin = {
+        ...c,
+        earnedPts,
+        isCrit,
+      };
+
+      if (c.id) {
+        resultMap.set(c.id, calculated);
+      } else {
+        resultMap.set(c, calculated);
+      }
+    });
+  });
+
+  return checkins.map((c) => (c.id ? resultMap.get(c.id) : resultMap.get(c)) || { ...c, earnedPts: c.pts || 0 });
+}
+
 /**
  * 統一精確計算引擎
  * 傳入員工舊資料與該員工所有「通過」或「補登通過」的打卡紀錄
@@ -105,6 +203,8 @@ export function calculateEmployeeStats(
       }
     } else if (c.taskType === '照片心得') {
       pts = 5;
+    } else {
+      pts = c.pts || 1;
     }
 
     taskPts += pts;
