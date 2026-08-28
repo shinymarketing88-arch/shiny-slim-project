@@ -1,5 +1,8 @@
 export type GroupType = 'fat' | 'muscle' | '';
 
+export type GenderType = 'male' | 'female';
+export type AgeGroupType = 'under40' | 'age40to49' | 'age50plus';
+
 export interface Employee {
   empId: string;
   name: string;
@@ -22,6 +25,17 @@ export interface Employee {
   weeklyHealth: number;
   lastWeek: number;
   lastDietDate: string;
+  gender?: GenderType;
+  ageGroup?: AgeGroupType;
+  bodyResult?: number;
+  bodyRank?: number;
+  p22Target?: number;
+  isGoalMet?: boolean;
+  isMinPtsMet?: boolean;
+  achievementAward?: boolean;
+  individualAward?: string;
+  individualAwardRank?: number;
+  individualAwardPrize?: number;
   registeredAt?: any;
   createdAt?: any;
   completionReward?: string;
@@ -62,11 +76,28 @@ export interface Checkin {
 export interface Team {
   id: string;
   teamName: string;
+  group?: GroupType;
   inviteCode: string;
   leaderId: string;
   members: string[];
   disbanded?: boolean;
   createdAt?: any;
+}
+
+export interface TeamResult {
+  teamId: string;
+  teamName: string;
+  group: GroupType;
+  memberIds: string[];
+  members: Employee[];
+  avgTotalPts: number;
+  avgBodyResult: number;
+  isAllMembersMinPtsMet: boolean;
+  isAvgGoalMet: boolean;
+  isQualified: boolean;
+  rank?: number;
+  awardName?: string;
+  prizePerMember?: number;
 }
 
 export interface SystemSettings {
