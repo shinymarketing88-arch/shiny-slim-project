@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+/* 顯眼、優雅的橫向滾動條樣式 */
+.tab-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #9333ea #f3e8ff;
+}
+
+.tab-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tab-scrollbar::-webkit-scrollbar-track {
+  background: #f3e8ff;
+  border-radius: 9999px;
+}
+
+.tab-scrollbar::-webkit-scrollbar-thumb {
+  background: #9333ea;
+  border-radius: 9999px;
+}
+
+.tab-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #7e22ce;
+}
+

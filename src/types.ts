@@ -50,6 +50,8 @@ export interface Employee {
   updatedByAdmin?: boolean;
   adminEditAt?: any;
   adminEditBy?: string;
+  teamNum?: number;
+  assignedTeamName?: string;
 }
 
 export interface Checkin {
@@ -96,6 +98,7 @@ export interface TeamResult {
   isAvgGoalMet: boolean;
   isQualified: boolean;
   rank?: number;
+  award?: string;
   awardName?: string;
   prizePerMember?: number;
 }
