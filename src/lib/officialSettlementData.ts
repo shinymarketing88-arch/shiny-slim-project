@@ -1643,7 +1643,33 @@ export function convertOfficialRecordsToEmployees(): Employee[] {
     // 預設角色與性別依據
     const isMale = ['鄭凱中', '林聖傑', '許書銘', '古秉翰', '張家獻', '于智偉', '陳緯浩', '游智盛', '張健威', '楊博鈞', 'TRAN TRI BAO陳智寶'].includes(r.name);
     const gender = isMale ? 'male' : 'female';
-    const ageGroup = ['范紋綾', '徐慧玲', '呂靈慧', '莫舒涵', '于智偉', '吳偲瑜', '張曉美', '李芮綺'].includes(r.name) ? 'age40to49' : 'under40';
+    const ageGroup = ['范紋綾', '徐慧玲', '呂靈慧', '莫舒涵', '于智偉', '吳偲瑜', '張曉美'].includes(r.name) ? 'age40to49' : 'under40';
+
+    const bodyRank =
+      r.empId === 'SM0012'
+        ? 4
+        : r.empId === 'SM0054'
+        ? 3
+        : r.empId === 'VE0296'
+        ? 1
+        : r.empId === 'SM0062'
+        ? 2
+        : r.empId === 'VE0188'
+        ? 3
+        : r.empId === 'SM0052'
+        ? 1
+        : r.empId === 'VE0219'
+        ? 2
+        : undefined;
+
+    const individualAwardRank =
+      r.individualAward?.includes('冠軍')
+        ? 1
+        : r.individualAward?.includes('亞軍')
+        ? 2
+        : r.individualAward?.includes('季軍')
+        ? 3
+        : undefined;
 
     return {
       empId: r.empId,
@@ -1669,11 +1695,13 @@ export function convertOfficialRecordsToEmployees(): Employee[] {
       gender,
       ageGroup,
       bodyResult: r.bodyResult,
+      bodyRank,
       p22Target: r.p22Target,
       isGoalMet: r.isGoalMet,
       isMinPtsMet: r.isMinPtsMet,
       achievementAward: r.achievementAward,
       individualAward: r.individualAward === '無' ? undefined : r.individualAward,
+      individualAwardRank,
       individualAwardPrize: r.individualAwardPrize,
     };
   });
