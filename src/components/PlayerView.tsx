@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, storage } from '../lib/firebase';
 import { doc, getDoc, updateDoc, collection, addDoc, onSnapshot, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Employee, Checkin, Team } from '../types';
-import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD, attachCalculatedPointsToCheckins, CalculatedCheckin } from '../lib/calcEngine';
+import { calculateEmployeeStats, SPORT_PTS_MAP, TARGET_WORD, attachCalculatedPointsToCheckins, CalculatedCheckin, calculateTournamentResults, getP22Target } from '../lib/calcEngine';
 import { HeroAvatarSVG } from './HeroAvatarSVG';
 
 const CHARS = {
@@ -82,9 +82,29 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
   // Checkins & Realtime State
   const [myCheckins, setMyCheckins] = useState<Checkin[]>([]);
   const [rankingList, setRankingList] = useState<any[]>([]);
-  const [rankFilter, setRankFilter] = useState<'all' | 'fat' | 'muscle' | 'team'>('all');
+  const [tournamentResults, setTournamentResults] = useState<any>(null);
+  const [rankFilter, setRankFilter] = useState<'awards' | 'team' | 'all' | 'fat' | 'muscle'>('awards');
   const [sysSettings, setSysSettings] = useState<any>(null);
   const [previewStage, setPreviewStage] = useState<number | null>(null);
+
+  const rankTabsRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkRankTabsScroll = () => {
+    if (!rankTabsRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = rankTabsRef.current;
+    setCanScrollLeft(scrollLeft > 4);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 4);
+  };
+
+  const handleScrollTabs = (dir: 'left' | 'right') => {
+    if (!rankTabsRef.current) return;
+    rankTabsRef.current.scrollBy({
+      left: dir === 'left' ? -140 : 140,
+      behavior: 'smooth',
+    });
+  };
 
   // Modals
   const [uploadTask, setUploadTask] = useState<{ task: string; pts: number } | null>(null);
@@ -186,35 +206,68 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
     fetchTeam();
   }, [empData?.empId, setupStep]);
 
-  // 載入排行榜 (包含全體即時精確動態計算)
+  // 載入排行榜 (包含全體即時精確動態計算與 8/27 大會決賽成果)
   const loadRankings = async () => {
     try {
       const snap = await getDocs(collection(db, 'summer2026_employees'));
       const cSnap = await getDocs(collection(db, 'summer2026_checkins'));
+      const tSnap = await getDocs(collection(db, 'summer2026_teams'));
       const allCheckins = cSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Checkin));
+      const allTeams = tSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Team));
 
-      let list = snap.docs.map((d) => {
-        const emp = { empId: d.id, ...d.data() } as Employee;
+      const rawEmps = snap.docs.map((d) => ({ empId: d.id, ...d.data() } as Employee));
+      const calcTourn = calculateTournamentResults(rawEmps, allTeams, sysSettings || {});
+      setTournamentResults(calcTourn);
+
+      const empTeamMap = new Map<string, string>();
+      allTeams.forEach((t) => {
+        if (t.members && Array.isArray(t.members)) {
+          t.members.forEach((mId) => {
+            empTeamMap.set(mId, t.teamName);
+          });
+        }
+      });
+
+      const updatedEmpMap = new Map<string, Employee>();
+      calcTourn.updatedEmployees.forEach((ue) => {
+        updatedEmpMap.set(ue.empId, ue);
+      });
+
+      let list = rawEmps.map((emp) => {
         const myApproved = allCheckins.filter(
           (c) => c.empId === emp.empId && (c.status === '通過' || c.status === '補登通過')
         );
         const calc = calculateEmployeeStats(emp, myApproved, startDateStr);
+        const tournEmp = updatedEmpMap.get(emp.empId) || emp;
+        const targetStandard = (tournEmp.p22Target && tournEmp.p22Target > 0)
+          ? tournEmp.p22Target
+          : getP22Target(tournEmp.group, tournEmp.gender, tournEmp.ageGroup);
+        const res = tournEmp.bodyResult ?? (emp.targetVal > 0 && emp.currentGap !== undefined ? emp.targetVal - emp.currentGap : 0);
+        const rate = targetStandard > 0 ? Math.round((res / targetStandard) * 100) : 0;
+
         return {
-          ...emp,
-          taskPts: calc.taskPts,
-          totalPts: calc.totalPts,
+          ...tournEmp,
+          taskPts: tournEmp.taskPts !== undefined ? tournEmp.taskPts : calc.taskPts,
+          totalPts: tournEmp.totalPts !== undefined ? tournEmp.totalPts : calc.totalPts,
           weeklyDiet: calc.weeklyDiet,
           weeklySport: calc.weeklySport,
           weeklyHealth: calc.weeklyHealth,
+          assignedTeamName: empTeamMap.get(emp.empId) || (emp.teamNum ? `第 ${emp.teamNum} 組` : undefined),
+          targetStandard,
+          effectiveBodyResult: res,
+          achievementRate: rate,
         };
-      }).filter((e) => e.group && e.nickname);
+      }).filter((e) => e.group && (e.nickname || e.name));
 
       if (rankFilter === 'fat' || rankFilter === 'muscle') {
         list = list.filter((e) => e.group === rankFilter);
-      } else if (rankFilter === 'team' && myTeam) {
-        list = list.filter((e) => myTeam.members.includes(e.empId));
       }
-      list.sort((a, b) => (b.totalPts || 0) - (a.totalPts || 0));
+      list.sort((a, b) => {
+        if ((b.totalPts || 0) !== (a.totalPts || 0)) {
+          return (b.totalPts || 0) - (a.totalPts || 0);
+        }
+        return (b.bodyResult || 0) - (a.bodyResult || 0);
+      });
       setRankingList(list);
     } catch (e) {
       console.error(e);
@@ -225,7 +278,16 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
     if (setupStep === 0) {
       loadRankings();
     }
-  }, [rankFilter, setupStep]);
+  }, [rankFilter, setupStep, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'rank') {
+      const timer = setTimeout(() => {
+        checkRankTabsScroll();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab]);
 
   // 設定引導完成儲存
   const handleSaveSetup = async () => {
@@ -430,10 +492,12 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
   const physiqueStage = getPhysiqueStage(totalPts);
 
   // InBody 成效目標進度條計算 (%)
-  const inbodyTargetVal = empData?.targetVal || 0;
-  const inbodyCurrentGap = empData?.currentGap || 0;
-  const goalCompletionPct = inbodyTargetVal > 0
-    ? Math.min(100, Math.max(0, Math.round(((inbodyTargetVal - inbodyCurrentGap) / inbodyTargetVal) * 100)))
+  const myTargetVal = (empData?.p22Target && empData.p22Target > 0)
+    ? empData.p22Target
+    : (empData?.targetVal && empData.targetVal > 0 ? empData.targetVal : (empData?.group ? getP22Target(empData.group, empData.gender, empData.ageGroup) : 0));
+  const myBodyResult = empData?.bodyResult ?? (empData?.targetVal && empData?.currentGap !== undefined ? empData.targetVal - empData.currentGap : 0);
+  const goalCompletionPct = myTargetVal > 0
+    ? Math.round((myBodyResult / myTargetVal) * 100)
     : 0;
 
   // 計算精確個人統計資料（包含連續飲食打卡天數與馬甲果凍數）
@@ -856,28 +920,53 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
 
           {/* 3. InBody 數據動態成效進度條 */}
           {empData?.group && (
-            <div className="bg-white p-3.5 rounded-2xl border border-purple-100 shadow-sm space-y-2">
+            <div className="bg-white p-3.5 rounded-2xl border border-purple-100 shadow-sm space-y-2.5">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-purple-950">
                   <span>📐</span>
-                  <span>InBody 體態目標：{empData.target || (empData.group === 'fat' ? '減脂' : '增肌')}</span>
+                  <span>
+                    InBody 體態目標：
+                    {empData.group === 'fat' ? `減脂 ${myTargetVal}%` : `增肌 +${myTargetVal}kg`}
+                  </span>
                 </div>
-                <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                  目標達成率 {goalCompletionPct}%
+                <span
+                  className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                    goalCompletionPct >= 100
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-purple-50 text-purple-700 border-purple-200'
+                  }`}
+                >
+                  {goalCompletionPct >= 100 ? `🎉 目標達成率 ${goalCompletionPct}%` : `目標達成率 ${goalCompletionPct}%`}
                 </span>
               </div>
 
               {/* 成效進度條 */}
               <div className="w-full bg-purple-50 h-2.5 rounded-full overflow-hidden border border-purple-100 p-0.5">
                 <div
-                  className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${goalCompletionPct}%` }}
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    goalCompletionPct >= 100
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, goalCompletionPct))}%` }}
                 ></div>
               </div>
 
               <div className="flex justify-between items-center text-[11px] text-gray-500">
-                <span>目標：{empData.targetVal || 0} {empData.group === 'fat' ? '%' : 'kg'}</span>
-                <span>目前差距：<strong className="text-purple-900">{empData.currentGap || 0}</strong> {empData.group === 'fat' ? '%' : 'kg'}</span>
+                <span>
+                  目標：<strong className="text-purple-950">{myTargetVal}</strong> {empData.group === 'fat' ? '%' : 'kg'} ｜ 成果：<strong className="text-purple-950">{empData.group === 'fat' ? `${myBodyResult}%` : `+${myBodyResult}kg`}</strong>
+                </span>
+                <span>
+                  {myBodyResult >= myTargetVal ? (
+                    <span className="text-emerald-600 font-bold">
+                      ✅ 已超標 +{(myBodyResult - myTargetVal).toFixed(1)} {empData.group === 'fat' ? '%' : 'kg'}
+                    </span>
+                  ) : (
+                    <span>
+                      差距：<strong className="text-purple-900">{(myTargetVal - myBodyResult).toFixed(1)}</strong> {empData.group === 'fat' ? '%' : 'kg'}
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
           )}
@@ -1160,67 +1249,623 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
       {/* 排行榜 Tab */}
       {activeTab === 'rank' && (
         <div className="p-3 space-y-3">
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {[
-              { id: 'all', label: '🏆 綜合' },
-              { id: 'fat', label: '⚡ 減脂組' },
-              { id: 'muscle', label: '💪 增肌組' },
-              { id: 'team', label: '👥 我的隊伍' },
-            ].map((btn) => (
-              <button
-                key={btn.id}
-                onClick={() => setRankFilter(btn.id as any)}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                  rankFilter === btn.id ? 'bg-purple-600 text-white' : 'bg-white border border-purple-100 text-gray-600'
-                }`}
-              >
-                {btn.label}
-              </button>
-            ))}
+          {/* 頂部標題與重新整理列 */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-black text-purple-950">🏆 賽事榜單</span>
+              <span className="text-[10px] text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200/60 flex items-center gap-1">
+                <span>↔️</span> 左右滑動
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                loadRankings();
+                showToast('🔄 已重新整理排行榜最新成績！');
+              }}
+              className="px-2.5 py-1 rounded-full text-[11px] font-bold whitespace-nowrap bg-purple-100 hover:bg-purple-200 text-purple-800 flex items-center gap-1 transition-all shrink-0 cursor-pointer shadow-2xs"
+              title="即時從資料庫載入最新排行"
+            >
+              🔄 重新整理
+            </button>
           </div>
 
-          <div className="bg-white rounded-2xl border border-purple-100 overflow-hidden shadow-sm">
-            <div className="p-3 bg-purple-50 border-b border-purple-100 text-xs font-bold text-purple-900 flex justify-between">
-              <span>名次 / 暱稱</span>
-              <span>積分</span>
+          {/* 橫向滾動頁籤容器 (帶有顯眼滾動條與左右輔助按鈕) */}
+          <div className="relative">
+            {/* 左滑動按鈕 */}
+            {canScrollLeft && (
+              <button
+                onClick={() => handleScrollTabs('left')}
+                className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 z-10 w-6 h-6 rounded-full bg-white/95 shadow-md border border-purple-300 text-purple-700 flex items-center justify-center text-xs font-black cursor-pointer hover:bg-purple-50 transition-all"
+                title="向左滾動"
+              >
+                ‹
+              </button>
+            )}
+
+            {/* 標籤滾動列 */}
+            <div
+              ref={rankTabsRef}
+              onScroll={checkRankTabsScroll}
+              className="flex gap-2 overflow-x-auto pb-2.5 pt-1 px-1 tab-scrollbar scroll-smooth"
+            >
+              {[
+                { id: 'awards', label: '🎖️ 決賽榮譽榜' },
+                { id: 'team', label: '👥 團隊前兩名' },
+                { id: 'all', label: '🏆 綜合個人' },
+                { id: 'fat', label: '⚡ 減脂個人' },
+                { id: 'muscle', label: '💪 增肌個人' },
+              ].map((btn) => (
+                <button
+                  key={btn.id}
+                  onClick={(e) => {
+                    setRankFilter(btn.id as any);
+                    e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                  }}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 cursor-pointer ${
+                    rankFilter === btn.id
+                      ? 'bg-purple-600 text-white shadow-sm ring-2 ring-purple-300 ring-offset-1'
+                      : 'bg-white border border-purple-200 text-gray-700 hover:border-purple-300 hover:bg-purple-50/50'
+                  }`}
+                >
+                  {btn.label}
+                </button>
+              ))}
             </div>
-            <div className="divide-y divide-purple-50">
-              {rankingList.length === 0 ? (
-                <div className="p-6 text-center text-xs text-gray-400">尚無排行資料</div>
-              ) : (
-                rankingList.map((emp, idx) => {
-                  const isMe = emp.empId === empData.empId;
-                  return (
-                    <div
-                      key={emp.empId}
-                      className={`p-3 flex items-center justify-between text-xs ${isMe ? 'bg-purple-100/60 font-bold' : ''}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                            idx === 0 ? 'bg-amber-400 text-amber-950' : idx === 1 ? 'bg-gray-300 text-gray-800' : idx === 2 ? 'bg-amber-700 text-amber-100' : 'bg-gray-100 text-gray-500'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        <span className="text-purple-950">
-                          {emp.nickname || emp.name} {isMe && '👈 (我)'}
-                        </span>
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded ${
-                            emp.group === 'fat' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
-                          }`}
-                        >
-                          {emp.group === 'fat' ? '減脂' : '增肌'}
-                        </span>
-                      </div>
-                      <span className="font-extrabold text-purple-700">{emp.totalPts || 0} 分</span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+
+            {/* 右滑動按鈕 */}
+            {canScrollRight && (
+              <button
+                onClick={() => handleScrollTabs('right')}
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 z-10 w-6 h-6 rounded-full bg-white/95 shadow-md border border-purple-300 text-purple-700 flex items-center justify-center text-xs font-black cursor-pointer hover:bg-purple-50 transition-all"
+                title="向右滾動"
+              >
+                ›
+              </button>
+            )}
           </div>
+
+          {rankFilter === 'awards' ? (
+            <div className="space-y-3">
+              {/* 個人競賽獎 */}
+              <div className="bg-white rounded-2xl border border-purple-100 p-3.5 space-y-3 shadow-sm">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-950 border-b border-purple-50 pb-2">
+                  <span>👑</span> 8/27 個人競賽獎優勝榜
+                </div>
+
+                {/* 減脂組個人前三名 */}
+                <div className="bg-orange-50/60 rounded-xl p-2.5 border border-orange-200/60 space-y-2">
+                  <div className="text-[11px] font-extrabold text-orange-900 flex items-center gap-1">
+                    <span>⚡</span> 減脂組 個人優勝（冠、亞、季軍）
+                  </div>
+                  <div className="space-y-1.5">
+                    {tournamentResults?.individualFatWinners?.map((w: any) => (
+                      <div key={w.empId} className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-orange-100 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">
+                            {w.individualAwardRank === 1 ? '🥇' : w.individualAwardRank === 2 ? '🥈' : '🥉'}
+                          </span>
+                          <div>
+                            <span className="font-bold text-gray-900">{w.name}</span>
+                            {w.nickname && <span className="text-[10px] text-gray-400 ml-1">({w.nickname})</span>}
+                          </div>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-bold">
+                            {w.individualAwardRank === 1 ? '冠軍 $10,000' : w.individualAwardRank === 2 ? '亞軍 $6,000' : '季軍 $3,000'}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-extrabold text-orange-700">{w.totalPts} 分</div>
+                          <div className="text-[9px] text-gray-400">減脂 {w.bodyResult}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 增肌組個人前三名 */}
+                <div className="bg-blue-50/60 rounded-xl p-2.5 border border-blue-200/60 space-y-2">
+                  <div className="text-[11px] font-extrabold text-blue-900 flex items-center gap-1">
+                    <span>💪</span> 增肌組 個人優勝（冠、亞、季軍）
+                  </div>
+                  <div className="space-y-1.5">
+                    {tournamentResults?.individualMuscleWinners?.map((w: any) => (
+                      <div key={w.empId} className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-blue-100 shadow-2xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">
+                            {w.individualAwardRank === 1 ? '🥇' : w.individualAwardRank === 2 ? '🥈' : '🥉'}
+                          </span>
+                          <div>
+                            <span className="font-bold text-gray-900">{w.name}</span>
+                            {w.nickname && <span className="text-[10px] text-gray-400 ml-1">({w.nickname})</span>}
+                          </div>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">
+                            {w.individualAwardRank === 1 ? '冠軍 $10,000' : w.individualAwardRank === 2 ? '亞軍 $6,000' : '季軍 $3,000'}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-extrabold text-blue-700">{w.totalPts} 分</div>
+                          <div className="text-[9px] text-gray-400">增肌 +{w.bodyResult}kg</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 團體競賽獎 (冠、亞軍) */}
+              <div className="bg-white rounded-2xl border border-purple-100 p-3.5 space-y-3 shadow-sm">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-950 border-b border-purple-50 pb-2">
+                  <span>👥</span> 8/27 團體競賽獎（全隊平均總分最高 前 2 組）
+                </div>
+
+                {/* 減脂組團體 */}
+                <div className="bg-orange-50/60 rounded-xl p-2.5 border border-orange-200/60 space-y-2">
+                  <div className="text-[11px] font-extrabold text-orange-900">⚡ 減脂組 團體前二名</div>
+                  <div className="space-y-1.5">
+                    {tournamentResults?.fatTeamWinners?.map((t: any) => (
+                      <div key={t.id} className="bg-white p-2.5 rounded-lg border border-orange-100 shadow-2xs space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-gray-900">
+                            {t.rank === 1 ? '🥇 冠軍' : '🥈 亞軍'}：{t.teamName}
+                            <span className="text-[10px] text-orange-700 font-medium ml-1">
+                              ({t.rank === 1 ? '每人 $3,000' : '每人 $2,000'})
+                            </span>
+                          </span>
+                          <span className="font-extrabold text-orange-700">平均 {t.avgTotalPts} 分</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 flex flex-wrap gap-1">
+                          {t.members?.map((m: any) => (
+                            <span key={m.empId} className="bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 text-orange-800">
+                              {m.name} ({m.totalPts}分)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 增肌組團體 */}
+                <div className="bg-blue-50/60 rounded-xl p-2.5 border border-blue-200/60 space-y-2">
+                  <div className="text-[11px] font-extrabold text-blue-900">💪 增肌組 團體前二名</div>
+                  <div className="space-y-1.5">
+                    {tournamentResults?.muscleTeamWinners?.map((t: any) => (
+                      <div key={t.id} className="bg-white p-2.5 rounded-lg border border-blue-100 shadow-2xs space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-gray-900">
+                            {t.rank === 1 ? '🥇 冠軍' : '🥈 亞軍'}：{t.teamName}
+                            <span className="text-[10px] text-blue-700 font-medium ml-1">
+                              ({t.rank === 1 ? '每人 $3,000' : '每人 $2,000'})
+                            </span>
+                          </span>
+                          <span className="font-extrabold text-blue-700">平均 {t.avgTotalPts} 分</span>
+                        </div>
+                        <div className="text-[10px] text-gray-500 flex flex-wrap gap-1">
+                          {t.members?.map((m: any) => (
+                            <span key={m.empId} className="bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 text-blue-800">
+                              {m.name} ({m.totalPts}分)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 個人達標獎 */}
+              <div className="bg-white rounded-2xl border border-purple-100 p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center justify-between text-xs font-bold text-purple-950 border-b border-purple-50 pb-2">
+                  <span className="flex items-center gap-1">🎯 個人達標獎 ($2,000 / 人)</span>
+                  <span className="text-purple-700 text-[11px] font-extrabold">
+                    共 {tournamentResults?.stats?.achievementCount || 0} 位同仁獲獎
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {tournamentResults?.updatedEmployees
+                    ?.filter((e: any) => e.achievementAward)
+                    .map((e: any) => (
+                      <span
+                        key={e.empId}
+                        className="bg-purple-50 px-2 py-1 rounded-lg border border-purple-100 text-[11px] text-purple-900 font-medium flex items-center gap-1"
+                      >
+                        <span>🏅</span>
+                        <span>{e.name}</span>
+                        <span className="text-[9px] text-purple-500">({e.group === 'fat' ? `減脂 ${e.bodyResult}%` : `增肌 ${e.bodyResult}kg`})</span>
+                      </span>
+                    ))}
+                </div>
+              </div>
+            </div>
+          ) : rankFilter === 'team' ? (
+            /* 專屬 團隊前兩名與各隊排行榜 */
+            <div className="space-y-3">
+              {/* 頂部告示 */}
+              <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-950 text-white rounded-2xl p-4 shadow-sm border border-purple-500/30 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">👑</span>
+                  <div className="text-sm font-black tracking-wide text-amber-300">
+                    8/27 團隊競賽 優勝榜（前兩名）
+                  </div>
+                </div>
+                <p className="text-[11px] text-purple-200">
+                  取全隊平均總分最高前 2 組獲頒團體榮譽獎金：<span className="text-amber-300 font-bold">🥇冠軍每人 $3,000</span> ｜ <span className="text-gray-200 font-bold">🥈亞軍每人 $2,000</span>
+                </p>
+              </div>
+
+              {/* 減脂組 團隊前 2 名卡片 */}
+              <div className="bg-white rounded-2xl border border-orange-200/80 p-3.5 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between border-b border-orange-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">⚡</span>
+                    <span className="text-xs font-black text-orange-950">減脂組 團隊優勝（前 2 名）</span>
+                  </div>
+                  <span className="text-[10px] text-orange-700 font-bold bg-orange-100 px-2 py-0.5 rounded-full">
+                    達標標準：全隊減脂達 3.0%
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {tournamentResults?.fatTeamWinners?.slice(0, 2).map((team: any) => {
+                    const isChampion = team.rank === 1;
+                    const isMyTeam = myTeam && myTeam.teamName === team.teamName;
+                    return (
+                      <div
+                        key={team.id}
+                        className={`rounded-xl p-3 border space-y-2.5 transition-all ${
+                          isChampion
+                            ? 'bg-gradient-to-b from-amber-50/80 to-white border-amber-300 shadow-2xs'
+                            : 'bg-gradient-to-b from-gray-50/80 to-white border-gray-300 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{isChampion ? '🥇' : '🥈'}</span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-extrabold text-sm text-gray-900">{team.teamName}</span>
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
+                                    isChampion ? 'bg-amber-400 text-black' : 'bg-gray-200 text-gray-800'
+                                  }`}
+                                >
+                                  {isChampion ? '冠軍 每人$3,000' : '亞軍 每人$2,000'}
+                                </span>
+                                {isMyTeam && (
+                                  <span className="text-[9px] px-1 py-0.2 bg-purple-600 text-white rounded font-bold">
+                                    👈 我的隊伍
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-500">
+                                平均減脂：<span className="text-orange-700 font-bold">{team.avgBodyResult}%</span> (標準 {team.avgTargetStandard}%)
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] text-gray-400">全隊平均總分</div>
+                            <div className="text-base font-black text-orange-700">{team.avgTotalPts} 分</div>
+                          </div>
+                        </div>
+
+                        {/* 隊員名單 */}
+                        <div className="bg-white/90 p-2.5 rounded-lg border border-orange-100/80 space-y-1.5">
+                          <div className="text-[10px] text-gray-500 font-bold flex items-center gap-1">
+                            <span>👥</span>
+                            <span>隊員名單（共 {team.members?.length || 0} 位）：</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {team.members?.map((m: any) => (
+                              <span
+                                key={m.empId}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-50 text-orange-950 border border-orange-200 shadow-2xs"
+                              >
+                                <span>{m.name}</span>
+                                {m.nickname && <span className="text-[10px] text-orange-600 font-normal">({m.nickname})</span>}
+                                {m.individualAwardRank && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-amber-200 text-amber-900">
+                                    {m.individualAwardRank === 1 ? '🥇個人冠' : m.individualAwardRank === 2 ? '🥈個人亞' : '🥉個人季'}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 增肌組 團隊前 2 名卡片 */}
+              <div className="bg-white rounded-2xl border border-blue-200/80 p-3.5 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">💪</span>
+                    <span className="text-xs font-black text-blue-950">增肌組 團隊優勝（前 2 名）</span>
+                  </div>
+                  <span className="text-[10px] text-blue-700 font-bold bg-blue-100 px-2 py-0.5 rounded-full">
+                    達標標準：全隊增肌達 0.8kg
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {tournamentResults?.muscleTeamWinners?.slice(0, 2).map((team: any) => {
+                    const isChampion = team.rank === 1;
+                    const isMyTeam = myTeam && myTeam.teamName === team.teamName;
+                    return (
+                      <div
+                        key={team.id}
+                        className={`rounded-xl p-3 border space-y-2.5 transition-all ${
+                          isChampion
+                            ? 'bg-gradient-to-b from-amber-50/80 to-white border-amber-300 shadow-2xs'
+                            : 'bg-gradient-to-b from-gray-50/80 to-white border-gray-300 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{isChampion ? '🥇' : '🥈'}</span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-extrabold text-sm text-gray-900">{team.teamName}</span>
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
+                                    isChampion ? 'bg-amber-400 text-black' : 'bg-gray-200 text-gray-800'
+                                  }`}
+                                >
+                                  {isChampion ? '冠軍 每人$3,000' : '亞軍 每人$2,000'}
+                                </span>
+                                {isMyTeam && (
+                                  <span className="text-[9px] px-1 py-0.2 bg-purple-600 text-white rounded font-bold">
+                                    👈 我的隊伍
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-500">
+                                平均增肌：<span className="text-blue-700 font-bold">+{team.avgBodyResult}kg</span> (標準 {team.avgTargetStandard}kg)
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10px] text-gray-400">全隊平均總分</div>
+                            <div className="text-base font-black text-blue-700">{team.avgTotalPts} 分</div>
+                          </div>
+                        </div>
+
+                        {/* 隊員名單 */}
+                        <div className="bg-white/90 p-2.5 rounded-lg border border-blue-100/80 space-y-1.5">
+                          <div className="text-[10px] text-gray-500 font-bold flex items-center gap-1">
+                            <span>👥</span>
+                            <span>隊員名單（共 {team.members?.length || 0} 位）：</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {team.members?.map((m: any) => (
+                              <span
+                                key={m.empId}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-950 border border-blue-200 shadow-2xs"
+                              >
+                                <span>{m.name}</span>
+                                {m.nickname && <span className="text-[10px] text-blue-600 font-normal">({m.nickname})</span>}
+                                {m.individualAwardRank && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded font-bold bg-amber-200 text-amber-900">
+                                    {m.individualAwardRank === 1 ? '🥇個人冠' : m.individualAwardRank === 2 ? '🥈個人亞' : '🥉個人季'}
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 全體參賽組別 成績排行榜 */}
+              <div className="bg-white rounded-2xl border border-purple-100 overflow-hidden shadow-sm space-y-0">
+                <div className="p-3 bg-purple-50/80 border-b border-purple-100 flex items-center justify-between text-xs font-bold text-purple-950">
+                  <span>📊 全體參賽隊伍 成績排名 (平均總分)</span>
+                  <span className="text-[11px] text-purple-600 font-medium">依全隊平均總分排序</span>
+                </div>
+                <div className="divide-y divide-purple-50">
+                  {/* 減脂組隊伍 */}
+                  <div className="bg-orange-50/40 px-3 py-1.5 text-[11px] font-bold text-orange-900 flex items-center gap-1">
+                    <span>⚡</span> 減脂組 全部組別 ({tournamentResults?.fatTeamResults?.length || 0} 組)
+                  </div>
+                  {tournamentResults?.fatTeamResults?.map((team: any, idx: number) => {
+                    const isMyTeam = myTeam && myTeam.teamName === team.teamName;
+                    const isTop2 = idx < 2;
+                    return (
+                      <div
+                        key={team.id}
+                        className={`p-2.5 px-3 flex items-center justify-between text-xs transition-colors ${
+                          isMyTeam ? 'bg-purple-100/70 font-bold' : isTop2 ? 'bg-orange-50/30' : ''
+                        }`}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                idx === 0 ? 'bg-amber-400 text-black' : idx === 1 ? 'bg-gray-300 text-black' : 'bg-gray-100 text-gray-500'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-gray-900">{team.teamName}</span>
+                            {isTop2 && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900">
+                                {idx === 0 ? '🥇 冠軍隊' : '🥈 亞軍隊'}
+                              </span>
+                            )}
+                            {isMyTeam && (
+                              <span className="text-[9px] px-1.5 py-0.2 bg-purple-600 text-white rounded font-bold">
+                                👈 您的隊伍
+                              </span>
+                            )}
+                            <span className="text-[10px] text-gray-400">({team.members?.length || 0} 位)</span>
+                          </div>
+                          <div className="text-[10px] text-gray-500 pl-7">
+                            隊員：{team.members?.map((m: any) => m.name).join('、') || '無成員'}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-extrabold text-orange-700">{team.avgTotalPts} 分</span>
+                          <span className="text-[10px] text-gray-400 ml-1.5">(減脂 {team.avgBodyResult}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* 增肌組隊伍 */}
+                  <div className="bg-blue-50/40 px-3 py-1.5 text-[11px] font-bold text-blue-900 flex items-center gap-1 mt-1">
+                    <span>💪</span> 增肌組 全部組別 ({tournamentResults?.muscleTeamResults?.length || 0} 組)
+                  </div>
+                  {tournamentResults?.muscleTeamResults?.map((team: any, idx: number) => {
+                    const isMyTeam = myTeam && myTeam.teamName === team.teamName;
+                    const isTop2 = idx < 2;
+                    return (
+                      <div
+                        key={team.id}
+                        className={`p-2.5 px-3 flex items-center justify-between text-xs transition-colors ${
+                          isMyTeam ? 'bg-purple-100/70 font-bold' : isTop2 ? 'bg-blue-50/30' : ''
+                        }`}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                idx === 0 ? 'bg-amber-400 text-black' : idx === 1 ? 'bg-gray-300 text-black' : 'bg-gray-100 text-gray-500'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+                            <span className="font-bold text-gray-900">{team.teamName}</span>
+                            {isTop2 && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-900">
+                                {idx === 0 ? '🥇 冠軍隊' : '🥈 亞軍隊'}
+                              </span>
+                            )}
+                            {isMyTeam && (
+                              <span className="text-[9px] px-1.5 py-0.2 bg-purple-600 text-white rounded font-bold">
+                                👈 您的隊伍
+                              </span>
+                            )}
+                            <span className="text-[10px] text-gray-400">({team.members?.length || 0} 位)</span>
+                          </div>
+                          <div className="text-[10px] text-gray-500 pl-7">
+                            隊員：{team.members?.map((m: any) => m.name).join('、') || '無成員'}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-extrabold text-blue-700">{team.avgTotalPts} 分</span>
+                          <span className="text-[10px] text-gray-400 ml-1.5">(增肌 +{team.avgBodyResult}kg)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {/* 個人排行榜名冊 */}
+              <div className="bg-white rounded-2xl border border-purple-100 overflow-hidden shadow-sm">
+                <div className="p-3 bg-purple-50 border-b border-purple-100 text-xs font-bold text-purple-900 flex justify-between">
+                  <span>名次 / 姓名 (暱稱) / 組別與隊伍</span>
+                  <span className="text-right">總積分 / 目標與達標率</span>
+                </div>
+                <div className="divide-y divide-purple-50">
+                  {rankingList.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-gray-400">尚無排行資料</div>
+                  ) : (
+                    rankingList.map((emp, idx) => {
+                      const isMe = emp.empId === empData.empId;
+                      const targetStr = emp.group === 'fat'
+                        ? `${emp.targetStandard ?? emp.p22Target ?? 3.0}%`
+                        : `${emp.targetStandard ?? emp.p22Target ?? 0.8}kg`;
+                      const bodyStr = emp.group === 'fat'
+                        ? `${emp.effectiveBodyResult ?? emp.bodyResult ?? 0}%`
+                        : `+${emp.effectiveBodyResult ?? emp.bodyResult ?? 0}kg`;
+                      const isGoalPassed = emp.isGoalMet || emp.achievementAward || (emp.achievementRate || 0) >= 100;
+
+                      return (
+                        <div
+                          key={emp.empId}
+                          className={`p-3 flex items-center justify-between text-xs transition-colors ${
+                            isMe ? 'bg-purple-100/70 font-bold' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                idx === 0
+                                  ? 'bg-amber-400 text-amber-950 shadow-2xs'
+                                  : idx === 1
+                                  ? 'bg-gray-300 text-gray-800 shadow-2xs'
+                                  : idx === 2
+                                  ? 'bg-amber-700 text-amber-100 shadow-2xs'
+                                  : 'bg-gray-100 text-gray-500'
+                              }`}
+                            >
+                              {idx + 1}
+                            </span>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-purple-950 font-bold">
+                                  {emp.name} {emp.nickname && <span className="text-gray-400 text-[10px] font-normal">({emp.nickname})</span>}
+                                </span>
+                                {isMe && <span className="text-purple-700 text-[10px] font-extrabold">👈(我)</span>}
+                                {emp.individualAwardRank && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                                    {emp.individualAwardRank === 1 ? '🥇 冠軍' : emp.individualAwardRank === 2 ? '🥈 亞軍' : '🥉 季軍'}
+                                  </span>
+                                )}
+                                {emp.achievementAward && !emp.individualAwardRank && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                    🎯 達標獎
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mt-0.5 flex-wrap">
+                                <span
+                                  className={`px-1 py-0.2 rounded font-medium ${
+                                    emp.group === 'fat' ? 'bg-orange-50 text-orange-700' : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  {emp.group === 'fat' ? '減脂組' : '增肌組'}
+                                </span>
+                                {(emp.assignedTeamName || emp.teamNum) && (
+                                  <span className="text-gray-500 font-medium">
+                                    👥 {emp.assignedTeamName || `第 ${emp.teamNum} 組`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right flex flex-col items-end shrink-0">
+                            <span className="font-extrabold text-sm text-purple-700">{emp.totalPts || 0} 分</span>
+                            <div className="text-[10px] text-gray-500 font-medium mt-0.5">
+                              成效 {bodyStr} / 目標 {targetStr}
+                            </div>
+                            <div className="text-[10px] font-bold mt-0.5">
+                              {isGoalPassed ? (
+                                <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-extrabold">
+                                  ✅ 達標率 {emp.achievementRate ?? 100}%
+                                </span>
+                              ) : (
+                                <span className="text-gray-400 font-medium">
+                                  達標率 {emp.achievementRate ?? 0}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1243,6 +1888,27 @@ export default function PlayerView({ onSwitchToAdmin }: { onSwitchToAdmin: () =>
               <span className={`text-xs font-bold px-2 py-0.5 rounded ${empData.group === 'fat' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>
                 {empData.group === 'fat' ? '⚡ 減脂組' : '💪 增肌組'}
               </span>
+            </div>
+            <div className="flex justify-between items-center border-b border-purple-50 pb-2">
+              <span className="text-xs text-gray-500">體態目標與成果</span>
+              <div className="text-right text-xs">
+                <span className="font-bold text-purple-950">
+                  {empData.group === 'fat'
+                    ? `目標 ${myTargetVal}% ｜ 成果 ${myBodyResult}%`
+                    : `目標 ${myTargetVal}kg ｜ 成果 +${myBodyResult}kg`}
+                </span>
+                <div className="text-[10px] mt-0.5">
+                  {goalCompletionPct >= 100 ? (
+                    <span className="text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                      🎉 達標率 {goalCompletionPct}% (已達成)
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">
+                      達標率 {goalCompletionPct}%
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">累積總積分</span>
