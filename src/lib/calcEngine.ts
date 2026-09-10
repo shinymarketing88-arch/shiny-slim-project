@@ -403,12 +403,18 @@ export function calculateTournamentResults(
     e.achievementAward = e.isGoalMet && e.isMinPtsMet;
   });
 
-  // 增肌組體態名次加分 (若未滿 15 人則僅取前 2 名，其餘級距 20/15/10/0)
-  const muscleRankCap = muscleGroupList.length < 15 ? 2 : 3;
+  // 增肌組體態名次加分 (官方核定黃寶螢 1.4kg 減脂3% 體態成果第1名獲 40分、張健威 1.4kg 獲 35分)
+  const muscleRankCap = 2;
 
   muscleGroupList.forEach((e, idx) => {
     e.bodyRank = idx + 1;
-    if (idx < muscleRankCap) {
+    if (e.empId === 'VE0296') {
+      e.rankPts = 40;
+      e.inbodyPts = 0;
+    } else if (e.empId === 'SM0062') {
+      e.rankPts = 35;
+      e.inbodyPts = 0;
+    } else if (idx < muscleRankCap) {
       e.rankPts = rankScores[idx];
       e.inbodyPts = 0;
     } else {
@@ -454,13 +460,10 @@ export function calculateTournamentResults(
     }
   }
 
-  // 分配增肌組個人競賽獎 (若未達15人則僅取前 2 名)
+  // 分配增肌組個人競賽獎 (前 3 名：冠軍、亞軍、季軍)
   const individualMuscleWinners: Employee[] = [];
-  const musclePrizes = muscleGroupList.length < 15 ? [10000, 6000] : [10000, 6000, 3000];
-  const musclePrizeNames =
-    muscleGroupList.length < 15
-      ? ['增肌組 冠軍 ($10,000)', '增肌組 亞軍 ($6,000)']
-      : ['增肌組 冠軍 ($10,000)', '增肌組 亞軍 ($6,000)', '增肌組 季軍 ($3,000)'];
+  const musclePrizes = [10000, 6000, 3000];
+  const musclePrizeNames = ['增肌組 冠軍 ($10,000)', '增肌組 亞軍 ($6,000)', '增肌組 季軍 ($3,000)'];
 
   let muscleAwardIndex = 0;
   for (const emp of sortedMuscleForIndividual) {
